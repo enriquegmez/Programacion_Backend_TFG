@@ -1,78 +1,65 @@
 """
-server_node.py
-El servidor WebSocket asíncrono. Actúa como la puerta de enlace física entre 
-la red y la lógica interna de Python.
+server.py
+El "Cartero" de la aplicación.
+Se encarga exclusivamente de levantar el puerto, mantener el bucle de recepción,
+enviar los mensajes por la red y derivar el procesamiento lógico al Router.
 """
 
-import asyncio
 import logging
-
-# ¡Usando la API Moderna de WebSockets!
 from websockets.asyncio.server import serve, ServerConnection
 from websockets.exceptions import ConnectionClosed
 
-# Importamos nuestras herramientas
-from app_tiago.utils.constants import SERVER_IP, SERVER_PORT, MsgType, Action
-from app_tiago.protocol.json_translator import MessageCodec
+from app_tiago.utils.constants import SERVER_IP, SERVER_PORT
 
 class AppServer:
-    def __init__(self):
+    def __init__(self, connection_manager, router):
         self.logger = logging.getLogger("AppServer")
-        self.codec = MessageCodec()
-        self.active_connections = set()
+        self.connection_manager = connection_manager
+        self.router = router
 
-    # Añadimos el tipo ServerConnection para tener autocompletado de los métodos send() y recv()
-    async def handler(self, websocket: ServerConnection):
+    async def send_message(self, websocket: ServerConnection, json_string: str):
         """
-        Esta función se ejecuta CADA VEZ que un nuevo móvil se conecta.
+        ÚNICO punto de toda la aplicación donde se envía información por la red.
+        Cualquier otro script que quiera enviar datos debe pasar por aquí.
         """
-        client_ip = websocket.remote_address[0]
-        self.logger.info(f"Nuevo cliente conectado desde la IP: {client_ip}")
-        self.active_connections.add(websocket)
-
         try:
-            # Bucle infinito escuchando los mensajes
+            await websocket.send(json_string)
+        except ConnectionClosed:
+            self.logger.warning("Intento de envío fallido: El cliente ya se había desconectado.")
+        except Exception as e:
+            self.logger.error(f"Fallo crítico al enviar datos por WebSocket: {e}")
+
+    async def handler(self, websocket: ServerConnection):
+        client_ip = websocket.remote_address[0]
+        self.logger.info(f"Nueva conexión entrante desde la IP: {client_ip}")
+
+        await self.connection_manager.register_client(websocket)
+        #Creamos el session id
+        session_id = self.connection_manager.create_session()
+        # Creamos la función que inyectaremos en el router.
+        # Así el router puede enviar mensajes sin saber qué es un "websocket".
+        async def send_callback(json_str: str):
+            await self.send_message(websocket, json_str)
+
+        #enviamos el session id al cliente
+        await self.router.send_session_assigned(session_id, send_callback)
+        
+        try:
             async for raw_message in websocket:
-                self.logger.info(f"Mensaje crudo recibido: {raw_message}")
-
-                # 1. PARSER
-                mensaje_dict = self.codec.decode(raw_message)
-
-                # 2. ROUTER IMPROVISADO (Solo para la prueba)
-                header = mensaje_dict.get("header", {})
-                payload = mensaje_dict.get("payload", {})
-
-                if header.get("type") == MsgType.COMMAND_REQ and payload.get("action") == Action.CONNECT:
-                    self.logger.info("Recibida petición de conexión. Procesando...")
-                    
-                    cliente_session_id = header.get("session_id", "temp_id")
-                    assigned_id_int = 1 
-                    
-                    # 3. FACTORY
-                    json_respuesta = self.codec.build_connect_success(cliente_session_id, assigned_id_int)
-                    
-                    # 4. ENVÍO
-                    await websocket.send(json_respuesta)
-                    self.logger.info("Respuesta de éxito enviada al cliente.")
+                self.logger.debug(f"Mensaje crudo recibido: {raw_message}")
                 
-                elif header.get("type") == MsgType.PROTOCOL_ERROR:
-                    self.logger.warning("El JSON estaba mal formado. Enviando error de protocolo.")
-                    error_json = self.codec.build_protocol_error(400, "Invalid JSON format")
-                    await websocket.send(error_json)
-
-                else:
-                    self.logger.warning(f"Mensaje ignorado. Tipo recibido: {header.get('type')}")
+                # Le pasamos el string crudo y la "tubería" de salida
+                await self.router.handle_raw_message(raw_message, send_callback)
 
         except ConnectionClosed as e:
-            self.logger.warning(f"Cliente desconectado: {e}")
+            self.logger.warning(f"Cliente desconectado de forma esperada/inesperada: {e}")
+        except Exception as e:
+            self.logger.error(f"Error crítico en la conexión con {client_ip}: {e}")
         finally:
-            self.active_connections.remove(websocket)
+            await self.connection_manager.unregister_client(websocket)
             self.logger.info(f"Conexión con {client_ip} cerrada y limpiada.")
 
     async def start_server(self):
-        """Arranca el servidor usando la API moderna de websockets"""
         self.logger.info(f"Iniciando servidor de teleoperación en ws://{SERVER_IP}:{SERVER_PORT}")
-        
-        # Uso del gestor de contexto asíncrono con serve_forever()
         async with serve(self.handler, SERVER_IP, SERVER_PORT) as server:
             await server.serve_forever()

@@ -6,6 +6,10 @@ setup(
     name=package_name,
     version='0.0.0',
     packages=find_packages(exclude=['test']),
+    package_data={
+        # Le dice que dentro de app_tiago (y sus subcarpetas) copie todos los .json
+        package_name: ['**/*.json'],
+    },
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -20,7 +24,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'server_node = app_tiago.main:main'
+            'server_node = app_tiago.main:entry_point'
         ],
     },
 )

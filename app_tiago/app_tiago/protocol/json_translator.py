@@ -1,23 +1,33 @@
 """
-message_factory_parser.py
+json_translator.py
 Centraliza la codificación y decodificación de los mensajes.
-Implementación estricta basada en el JSON Schema del Protocolo TIAGO.
+Traduce entre JSON puro (para la red) y objetos RobotMessage (para el backend).
 """
 
 import json
 import time
 import logging
+import dataclasses
 from typing import Dict, Any, Optional
-from app_tiago.utils.constants import MsgType, StatusCode
+
+from app_tiago.utils.constants import MsgType, StatusCode, RespType
+from app_tiago.protocol.models import (
+    RobotMessage, MessageHeader, CommandReqPayload, QueryReqPayload,
+    ActionReqPayload, ControlModeReqPayload, ControlReqPayload, ControlData,
+    StreamReqPayload, StopStreamReqPayload, AsyncNotifyPayload,
+    ProtocolErrorPayload, EmptyPayload, QueryRespPayload,
+    ActionFeedbackPayload, StreamRespPayload, GenericRespPayload
+)
+
+from app_tiago.protocol.validator import ProtocolValidator
 
 class MessageCodec:
     def __init__(self):
         self.logger = logging.getLogger("MessageCodec")
-        # El contador de mensajes asegura que el msg_id sea único y secuencial
         self._msg_id_counter = 0
+        self.validator = ProtocolValidator()
 
     def _get_next_msg_id(self) -> int:
-        """Genera el siguiente msg_id válido (entero >= 0)."""
         current_id = self._msg_id_counter
         self._msg_id_counter += 1
         return current_id
@@ -25,113 +35,122 @@ class MessageCodec:
     # ==========================================
     # 1. PARSER (Entrada de red a Python)
     # ==========================================
-    def decode(self, raw_string: str) -> Dict[str, Any]:
+    def decode(self, raw_string: str) -> RobotMessage:
         """
-        Convierte el string del WebSocket en un diccionario Python.
-        Solo valida la sintaxis JSON. La estructura la validará el validator.py.
+        Convierte el string del WebSocket en un objeto RobotMessage estructurado.
+        Si hay un error JSON, devuelve un RobotMessage de tipo PROTOCOL_ERROR.
         """
         try:
-            parsed_data = json.loads(raw_string)
-            # Intentamos leer el tipo del header de forma segura para el log
-            header = parsed_data.get("header", {})
-            self.logger.debug(f"Mensaje decodificado. Tipo: {header.get('type', 'UNKNOWN')}")
-            return parsed_data
-            
+            parsed_dict = json.loads(raw_string)
         except json.JSONDecodeError as e:
             self.logger.error(f"Error crítico de formato JSON: {e}")
-            # Si la sintaxis está rota, generamos la estructura de PROTOCOL_ERROR
-            # que tu schema exige internamente para que el router lo maneje.
-            return self._build_internal_error_dict(StatusCode.BAD_REQUEST, "Invalid JSON format")
+            return self._build_internal_error_msg(StatusCode.BAD_REQUEST, "Invalid JSON format")
 
-    def _build_internal_error_dict(self, code: int, description: str) -> Dict[str, Any]:
-        """Genera un diccionario de error interno compatible con tu schema."""
-        return {
-            "header": {
-                "msg_id": self._get_next_msg_id(),
-                "timestamp": time.time(),
-                "type": MsgType.PROTOCOL_ERROR,
-                "session_id": ""
-            },
-            "payload": {
-                "error_code": code,
-                "description": description
-            }
-        }
+        # --- CAPA DE VALIDACIÓN DEL SCHEMA ---
+        is_valid, error_desc = self.validator.validate_message(parsed_dict)
+        if not is_valid:
+            # Si el JSON no cumple el esquema, devolvemos un PROTOCOL_ERROR directamente
+            return self._build_internal_error_msg(StatusCode.BAD_REQUEST, error_desc)
+        # -------------------------------------
 
-    # ==========================================
-    # 2. BASE FACTORY (Motor interno de empaquetado)
-    # ==========================================
-    def _encode(self, msg_type: str, payload: Dict[str, Any], session_id: str = "") -> str:
-        """
-        Construye EL SOBRE. Garantiza que todos los mensajes salientes 
-        cumplan la estructura base: header (con msg_id y timestamp automatizados) y payload.
-        """
-        message_dict = {
-            "header": {
-                "msg_id": self._get_next_msg_id(),
-                "timestamp": time.time(),
-                "type": msg_type,
-                "session_id": session_id
-            },
-            "payload": payload
-        }
-        return json.dumps(message_dict)
-
-    def _build_resp_base(self, resp_type: str, success: bool, code: int, 
-                         session_id: str, extra_payload: Optional[Dict] = None, 
-                         details: str = None) -> str:
-        """
-        Construye el payload base para los mensajes de tipo 'RESP'.
-        Maneja la lógica estricta de tu schema (ej. si success es false, 'details' es obligatorio).
-        """
-        payload = {
-            "success": success,
-            "code": code,
-            "resp_type": resp_type
-        }
+        # 1. Extraer Header
+        header_data = parsed_dict.get("header", {})
+        msg_type = header_data.get("type", "UNKNOWN")
         
-        if extra_payload:
-            payload.update(extra_payload)
-            
-        # Regla de tu schema: "Si success es FALSE, obligamos a que haya un mensaje en details"
-        if not success:
-            payload["details"] = details if details else "Error desconocido"
-        elif details:
-            payload["details"] = details
-
-        # En tu schema, todas las respuestas comparten el tipo de cabecera 'RESP'
-        return self._encode(MsgType.RESP, payload, session_id)
-
-    # ==========================================
-    # 3. CONSTRUCTORES PÚBLICOS (La API del Factory)
-    # ==========================================
-
-    def build_connect_success(self, current_session_id_str: str, assigned_session_id_int: int) -> str:
-        """
-        Respuesta específica de éxito para la acción 'connect'.
-        Según tu schema, si resp_type='COMMAND_RESP' y success=True, 
-        el payload debe incluir 'session_id' (como integer).
-        """
-        extra_payload = {
-            "session_id": assigned_session_id_int
-        }
-        return self._build_resp_base(
-            resp_type=MsgType.COMMAND_RESP,
-            success=True,
-            code=StatusCode.OK,
-            session_id=current_session_id_str, # String para el header
-            extra_payload=extra_payload
+        header = MessageHeader(
+            msg_id=header_data.get("msg_id", -1),
+            type=msg_type,
+            session_id=header_data.get("session_id", ""),
+            timestamp=header_data.get("timestamp", time.time())
         )
 
-    def build_protocol_error(self, error_code: int, description: str, session_id: str = "") -> str:
-        """
-        Construye el mensaje principal de PROTOCOL_ERROR.
-        Tu schema exige que el header sea type='PROTOCOL_ERROR' y el payload lleve 'error_code' y 'description'.
-        """
-        payload = {
-            "error_code": error_code,
-            "description": description
-        }
-        return self._encode(MsgType.PROTOCOL_ERROR, payload, session_id)
+        # 2. Extraer Payload según el tipo de mensaje
+        raw_payload = parsed_dict.get("payload", {})
+        
+        try:
+            if msg_type == MsgType.COMMAND_REQ:
+                payload = CommandReqPayload(**raw_payload)
+            elif msg_type == MsgType.QUERY_REQ:
+                payload = QueryReqPayload(**raw_payload)
+            elif msg_type in [MsgType.ACTION_REQ, MsgType.STOP_ACTION_REQ]:
+                payload = ActionReqPayload(**raw_payload)
+            elif msg_type == MsgType.CONTROL_MODE_REQ:
+                payload = ControlModeReqPayload(**raw_payload)
+            elif msg_type == MsgType.CONTROL_REQ:
+                data_dict = raw_payload.get("data", {})
+                payload = ControlReqPayload(data=ControlData(**data_dict))
+            elif msg_type == MsgType.STREAM_REQ:
+                payload = StreamReqPayload(**raw_payload)
+            elif msg_type == MsgType.STOP_STREAM_REQ:
+                payload = StopStreamReqPayload(**raw_payload)
+            elif msg_type == MsgType.ASYNC_NOTIFY:
+                payload = AsyncNotifyPayload(**raw_payload)
+            elif msg_type == MsgType.PROTOCOL_ERROR:
+                payload = ProtocolErrorPayload(**raw_payload)
+            elif msg_type in [MsgType.PING_REQ, MsgType.ACK]:
+                payload = EmptyPayload()
+            elif msg_type == MsgType.RESP:
+                resp_type = raw_payload.get("resp_type")
+                if resp_type == RespType.QUERY_RESP:
+                    payload = QueryRespPayload(**raw_payload)
+                elif resp_type in [RespType.ACTION_FEEDBACK, RespType.STOP_ACTION_FEEDBACK]:
+                    payload = ActionFeedbackPayload(**raw_payload)
+                elif resp_type == RespType.STREAM_RESP:
+                    payload = StreamRespPayload(**raw_payload)
+                else:
+                    payload = GenericRespPayload(**raw_payload)
+            else:
+                self.logger.warning(f"Tipo de mensaje desconocido: {msg_type}")
+                return self._build_internal_error_msg(StatusCode.BAD_REQUEST, f"Unknown message type: {msg_type}")
+                
+        except TypeError as e:
+            self.logger.error(f"Faltan campos en el payload o son incorrectos: {e}")
+            return self._build_internal_error_msg(StatusCode.BAD_REQUEST, "Malformed payload")
 
-    # TODO: En el futuro se añadirán aquí los métodos build_query_resp, build_stream_resp, etc.
+        return RobotMessage(header=header, payload=payload)
+
+    def _build_internal_error_msg(self, code: int, description: str) -> RobotMessage:
+        """Genera un objeto RobotMessage de error interno para que el router lo gestione."""
+        header = MessageHeader(
+            msg_id=-1, # Se asignará uno real al enviar
+            type=MsgType.PROTOCOL_ERROR,
+            session_id=""
+        )
+        payload = ProtocolErrorPayload(error_code=code, description=description)
+        return RobotMessage(header=header, payload=payload)
+
+    # ==========================================
+    # 2. ENCODER (De Python a String JSON)
+    # ==========================================
+    def encode(self, message: RobotMessage) -> str:
+        """
+        Toma un objeto RobotMessage, inyecta los datos temporales en la cabecera
+        y lo convierte en un string JSON limpio y válido.
+        """
+        # 1. Autocompletar datos del sistema en la cabecera antes de enviar
+        # Si el msg_id es menor o igual a 0, generamos uno nuevo (Notificaciones, Iniciativa del Server)
+        # Si ya tiene un ID válido (>0), lo respetamos (Eco de Respuestas)
+        if message.header.msg_id <= 0:
+            message.header.msg_id = self._get_next_msg_id()
+            
+        message.header.timestamp = time.time()
+
+        # 2. Convertir el objeto dataclass completo a diccionario
+        raw_dict = dataclasses.asdict(message)
+
+        # 3. Limpiar los valores nulos (None)
+        # Esto asegura que si un campo opcional no se usa, no aparezca en el JSON como "null",
+        # ahorrando ancho de banda y cumpliendo estrictamente con el JSON Schema.
+        clean_dict = self._remove_none_values(raw_dict)
+
+        return json.dumps(clean_dict)
+
+    def _remove_none_values(self, data: Any) -> Any:
+        """
+        Función recursiva para eliminar todas las claves cuyo valor sea None.
+        """
+        if isinstance(data, dict):
+            return {k: self._remove_none_values(v) for k, v in data.items() if v is not None}
+        elif isinstance(data, list):
+            return [self._remove_none_values(v) for v in data if v is not None]
+        return data

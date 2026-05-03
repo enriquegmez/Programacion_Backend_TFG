@@ -14,7 +14,7 @@ async def test_connection():
             "header": {
                 "msg_id": 1,
                 "timestamp": 123456789.0,
-                "type": "COMMAND_REQ",
+                "type": "COMMAND_RE",
                 "session_id": "movil_de_prueba"
             },
             "payload": {

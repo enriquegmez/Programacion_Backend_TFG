@@ -1,0 +1,11 @@
+# VS Code
+.vscode/
+*.db
+*.db-journal
+
+# Python (por si usas)
+__pycache__/
+*.pyc
+
+# Docker
+.docker_data/

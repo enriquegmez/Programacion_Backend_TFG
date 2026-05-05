@@ -66,24 +66,48 @@ class TiagoBridgeNode(Node):
         
         return len(nodos_robot) > 0
 
-    def set_control_mode(self, event: str) -> bool:
-        """Habilita o deshabilita el movimiento desde el joystick."""
+    def validate_topic(self, topic_name: str) -> tuple[bool, str]:
+        """Comprueba en la red ROS 2 si el topic existe y es de tipo Twist."""
+        # Limpiamos el nombre (por si llega con espacios o barras raras)
+        clean_topic = topic_name.strip()
+        
+        # Pedimos a la red la lista de TODOS los tópicos actuales
+        topics_and_types = self.get_topic_names_and_types()
+        
+        for name, types in topics_and_types:
+            # Comparamos (name == clean_topic) o si está bajo un namespace (name.endswith)
+            if name == clean_topic or name.endswith(f'/{clean_topic.lstrip("/")}') or name == f'/{clean_topic}':
+                if 'geometry_msgs/msg/Twist' in types:
+                    return True, ""
+                else:
+                    return False, f"El topic '{name}' existe, pero no acepta Twist. Usa: {types[0]}"
+                    
+        return False, f"El topic '{clean_topic}' no se ha encontrado en la red del robot."
+    
+    def set_control_mode(self, event: str, topic: str = "cmd_vel") -> tuple[bool, str]:
+        """Activa/Desactiva el control devolviendo (Éxito, Mensaje)."""
         if not self.is_connected:
-            self.logger.error("Cambio de modo denegado: El robot no está conectado.")
-            return False
+            self.logger.error("Cambio de modo denegado: Robot no conectado.")
+            return False, "Robot no conectado lógicamente."
 
         if event == ControlEvent.START:
+            # 1. VALIDAMOS EL TOPIC EN CALIENTE
+            is_valid, error_msg = self.validate_topic(topic)
+            if not is_valid:
+                self.logger.warning(f"Validación de topic fallida: {error_msg}")
+                return False, error_msg
+
             self.is_control_active = True
-            self.logger.info("Control de Joystick ACTIVADO.")
-            return True
+            self.logger.info(f"Control de Joystick ACTIVADO. Topic validado: {topic}")
+            return True, ""
             
         elif event == ControlEvent.STOP:
             self.is_control_active = False
             self.logger.info("Control de Joystick DESACTIVADO. Frenando robot.")
             self.stop_robot()
-            return True
+            return True, ""
             
-        return False
+        return False, "Evento desconocido."
 
     def publish_velocity(self, v: float, w: float) -> bool:
         """Envía el comando Twist si se cumplen las condiciones de seguridad."""
@@ -186,17 +210,17 @@ class Ros2Manager:
         if self._is_running and self.gateway_node:
             self.gateway_node.disconnect()
 
-    def set_control_mode(self, event: str, topic: str = "cmd_vel") -> bool:
+    def set_control_mode(self, event: str, topic: str = "cmd_vel") -> tuple[bool, str]:
         if self._is_running and self.gateway_node and self.safety_node:
-            # 1. Activamos la lógica de recibir joystick en el puente
-            success = self.gateway_node.set_control_mode(event)
+            # Ahora recogemos el success y el mensaje de error
+            success, msg = self.gateway_node.set_control_mode(event, topic)
             
-            # 2. Si es START y ha ido bien, le decimos al cerebro dónde publicar
             if success and event == ControlEvent.START:
                 self.safety_node.set_target_topic(topic)
                 
-            return success
-        return False
+            return success, msg
+            
+        return False, "El subsistema ROS 2 no está corriendo."
 
     def publish_velocity(self, v: float, w: float) -> bool:
         if self._is_running and self.gateway_node:

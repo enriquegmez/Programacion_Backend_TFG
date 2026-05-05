@@ -4,6 +4,7 @@ El Cerebro y Jefe de Sala del protocolo.
 Orquesta la validación, comprueba los estados y ejecuta las acciones.
 """
 
+import asyncio
 import logging
 import time
 from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType
@@ -174,21 +175,45 @@ class MessageRouter:
 
             case MsgType.CONTROL_MODE_REQ:
                 event = msg.payload.event
-                topic = getattr(msg.payload, 'topic', '/cmd_vel')
+                # Usamos el topic relativo (sin barra) como vimos antes
+                topic = getattr(msg.payload, 'topic', 'cmd_vel')
+                
                 try:
-                    if self.ros_node and not self.ros_node.set_control_mode(event, topic):
-                        resp_payload = GenericRespPayload(
-                            success=False, code=StatusCode.INTERNAL_ERROR, 
-                            resp_type=RespType.CONTROL_MODE_RESP, details=f"No se pudo cambiar el modo a {event}."
-                        )
+                    if self.ros_node:
+                        # Extraemos la tupla con el resultado y el mensaje de error
+                        success, error_msg = self.ros_node.set_control_mode(event, topic)
+                        
+                        if not success:
+                            # 1. Topic no válido o robot desconectado
+                            resp_payload = GenericRespPayload(
+                                success=False, 
+                                code=StatusCode.BAD_REQUEST, 
+                                resp_type=RespType.CONTROL_MODE_RESP, 
+                                details=error_msg  # <-- Enviamos el motivo exacto al frontend
+                            )
+                        else:
+                            # 2. Todo OK, empezamos a publicar
+                            resp_payload = GenericRespPayload(
+                                success=True, 
+                                code=StatusCode.OK, 
+                                resp_type=RespType.CONTROL_MODE_RESP
+                            )
                     else:
+                        # Falla porque el gestor ROS 2 no está instanciado
                         resp_payload = GenericRespPayload(
-                            success=True, code=StatusCode.OK, resp_type=RespType.CONTROL_MODE_RESP
+                            success=False, 
+                            code=StatusCode.INTERNAL_ERROR, 
+                            resp_type=RespType.CONTROL_MODE_RESP, 
+                            details="Backend ROS 2 no disponible."
                         )
+                        
                 except Exception as e:
+                    self.logger.error(f"Excepción en CONTROL_MODE_REQ: {e}")
                     resp_payload = GenericRespPayload(
-                        success=False, code=StatusCode.INTERNAL_ERROR, 
-                        resp_type=RespType.CONTROL_MODE_RESP, details=f"Excepción en el hardware: {str(e)}"
+                        success=False, 
+                        code=StatusCode.INTERNAL_ERROR, 
+                        resp_type=RespType.CONTROL_MODE_RESP, 
+                        details=f"Excepción en el hardware: {str(e)}"
                     )
 
             case MsgType.CONTROL_REQ:

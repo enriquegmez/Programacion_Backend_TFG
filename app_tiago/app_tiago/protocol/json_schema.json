@@ -76,7 +76,8 @@
             "required": ["event", "type"],
             "properties": {
               "event": { "enum": ["START", "STOP"] },
-              "type": { "enum": ["TELEOP", "JOINT"] }
+              "type": { "enum": ["TELEOP", "JOINT"] },
+              "topic": {"type": "string" }
             }
           }
         }

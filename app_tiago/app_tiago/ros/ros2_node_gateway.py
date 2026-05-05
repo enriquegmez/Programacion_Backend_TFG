@@ -9,8 +9,10 @@ import threading
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from rclpy.executors import SingleThreadedExecutor
 
 from app_tiago.utils.constants import ControlEvent
+from app_tiago.ros.ros2_core_node import SafetyFilterNode
 
 class TiagoBridgeNode(Node):
     def __init__(self):
@@ -19,27 +21,30 @@ class TiagoBridgeNode(Node):
         
         # Publicador real al tópico de velocidad de Tiago
         self.vel_publisher = self.create_publisher(msg_type=Twist, 
-                                                   topic='/cmd_vel', 
+                                                   topic='web_teleop/cmd_vel_raw', 
                                                    qos_profile=10)
-        self.logger.info("Publicador ROS 2 iniciado en el tópico: /cmd_vel")
+        self.logger.info("Puente ROS 2 iniciado. Publicando raw en: /web_teleop/cmd_vel_raw")
 
         # Estado de seguridad
         self.is_connected = False
         self.is_control_active = False
 
     def connect(self) -> bool:
-        """Establece la conexión lógica con el robot."""
-        # Comprobación real de ROS 2: Verificamos si hay alguien escuchando /cmd_vel
-        # En el simulador (Gazebo/Webots) o robot real, debería haber al menos 1 suscriptor
-        subs_count = self.vel_publisher.get_subscription_count()
-        if subs_count == 0:
-            self.logger.warning("Conexión rechazada: No se detecta ningún nodo suscrito a /cmd_vel (¿Simulador apagado?).")
-            # Nota: Si tu simulador usa un topic diferente a /cmd_vel (ej. /nav_vel o /mobile_base_controller/cmd_vel_unstamped),
-            # deberás cambiarlo arriba en el create_publisher. Si te bloquea las pruebas, pon un 'return True' aquí temporalmente.
-            return True  #PONER EN FALSE CUANDO SE SEPA EL TOPIC
+        """Verifica que existan nodos del robot conectados a la red ROS 2."""
+        # Obtenemos todos los nombres de los nodos activos en la red
+        nodos_activos = self.get_node_names()
+        
+        # Excluimos nuestros propios nodos de la lista
+        nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter']
+        nodos_robot = [nodo for nodo in nodos_activos if nodo not in nodos_nuestros]
+        
+        # Si la lista está vacía, no hay ningún robot simulado o real encendido
+        if len(nodos_robot) == 0:
+            self.logger.warning("Conexión rechazada: No se ha detectado ningún nodo del robot en la red (¿Simulador apagado?).")
+            return False
             
         self.is_connected = True
-        self.logger.info(f"Conectado al Tiago. Suscriptores detectados en /cmd_vel: {subs_count}")
+        self.logger.info(f"Robot detectado en la red. (Nodos ajenos encontrados: {len(nodos_robot)})")
         return True
 
     def disconnect(self):
@@ -49,6 +54,17 @@ class TiagoBridgeNode(Node):
             self.stop_robot()
             self.is_connected = False
             self.is_control_active = False
+
+    def check_connection_silently(self) -> bool:
+        """Comprueba si el robot sigue ahí sin saturar los logs."""
+        if not self.is_connected:
+            return False
+            
+        nodos_activos = self.get_node_names()
+        nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter']
+        nodos_robot = [nodo for nodo in nodos_activos if nodo not in nodos_nuestros]
+        
+        return len(nodos_robot) > 0
 
     def set_control_mode(self, event: str) -> bool:
         """Habilita o deshabilita el movimiento desde el joystick."""
@@ -97,43 +113,60 @@ class Ros2Manager:
     """
     def __init__(self):
         self.logger = logging.getLogger("Ros2Manager")
-        self.node = None
+        self.gateway_node = None
+        self.safety_node = None
+        self.executor = None
         self.spin_thread = None
         self._is_running = False
 
     def start(self):
-        """Inicializa el ecosistema ROS 2 y su hilo de ejecución."""
         if self._is_running:
             return
 
-        self.logger.info("Arrancando subsistema ROS 2...")
+        self.logger.info("Arrancando subsistema ROS 2 (Gateway + Filtro)...")
         rclpy.init()
-        self.node = TiagoBridgeNode()
+        
+        # 1. Instanciamos AMBOS nodos
+        self.gateway_node = TiagoBridgeNode()
+        self.safety_node = SafetyFilterNode()
+        
+        # 2. Creamos el Ejecutor y le añadimos los nodos
+        self.executor = SingleThreadedExecutor()
+        self.executor.add_node(self.gateway_node)
+        self.executor.add_node(self.safety_node)
+        
         self._is_running = True
 
+        # 3. Arrancamos el hilo usando el ejecutor en lugar del nodo
         self.spin_thread = threading.Thread(target=self._spin_loop, daemon=True)
         self.spin_thread.start()
 
     def _spin_loop(self):
-        """Mantiene vivo el nodo para que pueda enviar/recibir mensajes continuamente."""
         try:
-            rclpy.spin(self.node)
+            # spin() en el ejecutor procesa los eventos de TODOS los nodos que contenga
+            self.executor.spin()
         except Exception as e:
-            self.logger.error(f"Error crítico en rclpy.spin(): {e}")
+            self.logger.error(f"Error crítico en rclpy executor: {e}")
         finally:
             self.logger.info("Hilo de ROS 2 finalizado.")
 
     def stop(self):
-        """Apaga ROS 2 de forma limpia garantizando que el robot se detenga."""
         if not self._is_running:
             return
 
         self.logger.info("Apagando subsistema ROS 2...")
         self._is_running = False
         
-        if self.node:
-            self.node.disconnect()  # Freno garantizado antes de morir
-            self.node.destroy_node()
+        if self.gateway_node:
+            self.gateway_node.disconnect()
+            
+        if self.executor:
+            self.executor.shutdown()
+            
+        if self.gateway_node:
+            self.gateway_node.destroy_node()
+        if self.safety_node:
+            self.safety_node.destroy_node()
             
         if rclpy.ok():
             rclpy.shutdown()
@@ -145,20 +178,32 @@ class Ros2Manager:
     # API PÚBLICA PARA EL ROUTER
     # ==========================================
     def connect_to_robot(self) -> bool:
-        if self._is_running and self.node:
-            return self.node.connect()
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.connect()
         return False
 
     def disconnect_from_robot(self):
-        if self._is_running and self.node:
-            self.node.disconnect()
+        if self._is_running and self.gateway_node:
+            self.gateway_node.disconnect()
 
-    def set_control_mode(self, event: str) -> bool:
-        if self._is_running and self.node:
-            return self.node.set_control_mode(event)
+    def set_control_mode(self, event: str, topic: str = "cmd_vel") -> bool:
+        if self._is_running and self.gateway_node and self.safety_node:
+            # 1. Activamos la lógica de recibir joystick en el puente
+            success = self.gateway_node.set_control_mode(event)
+            
+            # 2. Si es START y ha ido bien, le decimos al cerebro dónde publicar
+            if success and event == ControlEvent.START:
+                self.safety_node.set_target_topic(topic)
+                
+            return success
         return False
 
     def publish_velocity(self, v: float, w: float) -> bool:
-        if self._is_running and self.node:
-            return self.node.publish_velocity(v, w)
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.publish_velocity(v, w)
+        return False
+    
+    def check_connection(self) -> bool:
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.check_connection_silently()
         return False

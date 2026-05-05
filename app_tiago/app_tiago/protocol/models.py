@@ -39,6 +39,7 @@ class ActionReqPayload:
 class ControlModeReqPayload:
     event: str         # START, STOP
     type: str          # TELEOP, JOINT
+    topic: Optional[str] = "cmd_vel"
 
 @dataclass
 class ControlData:

@@ -26,6 +26,48 @@ class MessageRouter:
         self.last_control_resp_time = 0.0
         self.CONTROL_RESP_INTERVAL = 0.5  # Segundos entre ACKs de movimiento
 
+        # --- NUEVAS VARIABLES PARA EL WATCHDOG ---
+        self.is_monitoring = False
+        self.monitor_task = None
+
+    # ==========================================
+    # EL WATCHDOG (Perro Guardián)
+    # ==========================================
+    async def _monitor_robot_connection(self, send_callback, session_id):
+        """Tarea en segundo plano que vigila el enlace con ROS 2 cada 2 segundos."""
+        self.logger.info("Watchdog iniciado: Vigilando conexión con el robot...")
+        
+        while self.is_monitoring:
+            # Esperamos 2 segundos sin bloquear el servidor web
+            await asyncio.sleep(2.0)
+            
+            # Comprobamos en silencio
+            if self.ros_node and not self.ros_node.check_connection():
+                self.logger.error("¡Watchdog detecta pérdida de conexión con el robot!")
+                self.is_monitoring = False
+                
+                # 1. Por seguridad, apagamos el estado interno
+                self.ros_node.disconnect_from_robot()
+                
+                # 2. Preparamos el aviso asíncrono para el frontend
+                notify_header = MessageHeader(
+                    msg_id=int(time.time()), # Un ID generado al vuelo
+                    type=MsgType.ASYNC_NOTIFY,
+                    session_id=session_id
+                )
+                
+                notify_payload = GenericRespPayload(
+                    success=False,
+                    code=StatusCode.NOT_FOUND,
+                    resp_type=RespType.ASYNC_NOTIFY,
+                    details="ROBOT_CONNECTION_LOST"
+                )
+                
+                # 3. Enviamos el mensaje
+                msg = RobotMessage(header=notify_header, payload=notify_payload)
+                await self._send_msg(msg, send_callback)
+                break # Salimos del bucle infinito
+
     async def send_session_assigned(self, session_id: str, send_callback):
         """Envia el session_id al cliente nada más abrir el WebSocket."""
         # msg_id=0 para que el codec asigne uno nuevo automáticamente
@@ -132,8 +174,9 @@ class MessageRouter:
 
             case MsgType.CONTROL_MODE_REQ:
                 event = msg.payload.event
+                topic = getattr(msg.payload, 'topic', '/cmd_vel')
                 try:
-                    if self.ros_node and not self.ros_node.set_control_mode(event):
+                    if self.ros_node and not self.ros_node.set_control_mode(event, topic):
                         resp_payload = GenericRespPayload(
                             success=False, code=StatusCode.INTERNAL_ERROR, 
                             resp_type=RespType.CONTROL_MODE_RESP, details=f"No se pudo cambiar el modo a {event}."

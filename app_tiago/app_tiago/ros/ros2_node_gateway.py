@@ -11,8 +11,8 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from rclpy.executors import SingleThreadedExecutor
 
-from app_tiago.utils.constants import ControlEvent
-from app_tiago.ros.ros2_core_node import SafetyFilterNode
+from utils.constants import ControlEvent
+from ros.ros2_core_node import SafetyFilterNode
 
 class TiagoBridgeNode(Node):
     def __init__(self):

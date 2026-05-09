@@ -10,8 +10,8 @@ import logging
 import dataclasses
 from typing import Dict, Any, Optional
 
-from app_tiago.utils.constants import MsgType, StatusCode, RespType
-from app_tiago.protocol.models import (
+from utils.constants import MsgType, StatusCode, RespType
+from protocol.models import (
     RobotMessage, MessageHeader, CommandReqPayload, QueryReqPayload,
     ActionReqPayload, ControlModeReqPayload, ControlReqPayload, ControlData,
     StreamReqPayload, StopStreamReqPayload, AsyncNotifyPayload,
@@ -19,7 +19,7 @@ from app_tiago.protocol.models import (
     ActionFeedbackPayload, StreamRespPayload, GenericRespPayload
 )
 
-from app_tiago.protocol.validator import ProtocolValidator
+from protocol.validator import ProtocolValidator
 
 class MessageCodec:
     def __init__(self):

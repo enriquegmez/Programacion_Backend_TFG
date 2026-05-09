@@ -10,7 +10,7 @@ import logging
 import time
 import uuid
 
-from app_tiago.utils.constants import ServerState
+from utils.constants import ServerState
 
 class ConnectionManager:
     def __init__(self, state_machine):

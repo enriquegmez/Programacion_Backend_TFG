@@ -9,7 +9,7 @@ import logging
 from websockets.asyncio.server import serve, ServerConnection
 from websockets.exceptions import ConnectionClosed
 
-from app_tiago.utils.constants import SERVER_IP, SERVER_PORT
+from utils.constants import SERVER_IP, SERVER_PORT
 
 class AppServer:
     def __init__(self, connection_manager, router):
@@ -40,6 +40,10 @@ class AppServer:
         # Así el router puede enviar mensajes sin saber qué es un "websocket".
         async def send_callback(json_str: str):
             await self.send_message(websocket, json_str)
+
+        async def close_callback():
+            self.logger.info("El Router ha solicitado el cierre de la conexión física.")
+            await websocket.close(code=1000, reason="Cierre limpio por END")
 
         #enviamos el session id al cliente
         await self.router.send_session_assigned(session_id, send_callback)

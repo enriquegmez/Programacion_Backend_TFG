@@ -89,14 +89,6 @@ class BaseResponsePayload:
     resp_data: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
-class CommandRespPayload:
-    success: bool
-    code: int
-    resp_type: str
-    details: Optional[str] = None
-    # Recuerda que aquí eliminamos el session_id en su día
-
-@dataclass
 class QueryRespPayload(BaseResponsePayload):
     """Respuesta específica para QUERY_REQ (añade array de datos)"""
     data: Optional[List[str]] = None  # Ej: ["/cmd_vel", "/battery_status"]

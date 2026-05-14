@@ -78,7 +78,8 @@ class TiagoBridgeNode(Node):
             # Comparamos (name == clean_topic) o si está bajo un namespace (name.endswith)
             if name == clean_topic or name.endswith(f'/{clean_topic.lstrip("/")}') or name == f'/{clean_topic}':
                 if 'geometry_msgs/msg/Twist' in types:
-                    return True, ""
+                    # ARREGLO ERROR 3: Devolvemos el nombre ABSOLUTO encontrado ('name')
+                    return True, name
                 else:
                     return False, f"El topic '{name}' existe, pero no acepta Twist. Usa: {types[0]}"
                     
@@ -92,14 +93,14 @@ class TiagoBridgeNode(Node):
 
         if event == ControlEvent.START:
             # 1. VALIDAMOS EL TOPIC EN CALIENTE
-            is_valid, error_msg = self.validate_topic(topic)
+            is_valid, msg = self.validate_topic(topic)
             if not is_valid:
-                self.logger.warning(f"Validación de topic fallida: {error_msg}")
-                return False, error_msg
+                self.logger.warning(f"Validación de topic fallida: {msg}")
+                return False, msg
 
             self.is_control_active = True
-            self.logger.info(f"Control de Joystick ACTIVADO. Topic validado: {topic}")
-            return True, ""
+            self.logger.info(f"Control de Joystick ACTIVADO. Topic validado: {msg}")
+            return True, "msg"
             
         elif event == ControlEvent.STOP:
             self.is_control_active = False
@@ -216,7 +217,7 @@ class Ros2Manager:
             success, msg = self.gateway_node.set_control_mode(event, topic)
             
             if success and event == ControlEvent.START:
-                self.safety_node.set_target_topic(topic)
+                self.safety_node.set_target_topic(msg)
                 
             return success, msg
             

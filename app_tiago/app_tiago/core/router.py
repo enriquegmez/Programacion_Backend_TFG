@@ -215,25 +215,40 @@ class MessageRouter:
                 ctrl_payload = cast(ControlReqPayload, msg.payload)
                 v = ctrl_payload.data.v
                 w = ctrl_payload.data.w
-                publish_success = True
-                if self.ros_node:
-                    try:
-                        publish_success = self.ros_node.publish_velocity(v, w)
-                    except Exception as e:
-                        self.logger.error(f"Fallo crítico enviando velocidad: {e}")
-                        publish_success = False
-                else:
-                    publish_success = False
-
+                
                 current_time = time.time()
-                # AVISO INMEDIATO: Si hay error, nos saltamos la espera para avisar rápido
+                publish_success = True
+                
+                # 🛡️ PROTECCIÓN ANTI-LAG (STALE DATA) 🛡️
+                # Calculamos cuánto tiempo ha pasado desde que el móvil creó este mensaje
+                latency = current_time - msg.header.timestamp
+                
+                # Si el mensaje tiene más de 0.5 segundos y el timestamp es válido (>0)
+                if msg.header.timestamp > 0 and latency > 0.5:
+                    self.logger.warning(f"PELIGRO: Paquete caducado por LAG (Latencia: {latency:.2f}s). Descartando.")
+                    publish_success = False
+                    if self.ros_node:
+                        # Freno de emergencia por software
+                        self.ros_node.stop_robot()
+                else:
+                    # El paquete es reciente (o no tiene timestamp), lo enviamos al robot normal
+                    if self.ros_node:
+                        try:
+                            publish_success = self.ros_node.publish_velocity(v, w)
+                        except Exception as e:
+                            self.logger.error(f"Fallo crítico enviando velocidad: {e}")
+                            publish_success = False
+                    else:
+                        publish_success = False
+
+                # AVISO INMEDIATO: Si hay error, nos saltamos la espera para avisar rápido al móvil
                 if not publish_success or (current_time - self.last_control_resp_time >= self.CONTROL_RESP_INTERVAL):
                     self.last_control_resp_time = current_time
                     
                     if publish_success is False:
                         resp_payload = GenericRespPayload(
                             success=False, code=StatusCode.INTERNAL_ERROR, 
-                            resp_type=RespType.CONTROL_RESP, details="Fallo publicando en /cmd_vel."
+                            resp_type=RespType.CONTROL_RESP, details="Comando rechazado: Caducado por alto LAG en la red."
                         )
                     else:
                         resp_payload = GenericRespPayload(

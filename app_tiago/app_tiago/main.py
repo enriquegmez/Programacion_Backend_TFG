@@ -38,7 +38,7 @@ async def main():
         state_machine = ProtocolStateMachine()
 
         # 3. Instanciar el Gestor de Conexiones (La "Seguridad")
-        connection_manager = ConnectionManager(state_machine)
+        connection_manager = ConnectionManager(state_machine, ros2_manager=ros_manager)
 
         # 4. Instanciar el Router inyectando dependencias (El "Cerebro")
         router = MessageRouter(connection_manager, state_machine, ros_node=ros_manager)

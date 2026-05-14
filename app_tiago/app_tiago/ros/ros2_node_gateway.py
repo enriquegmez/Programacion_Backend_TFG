@@ -210,6 +210,11 @@ class Ros2Manager:
     def disconnect_from_robot(self):
         if self._is_running and self.gateway_node:
             self.gateway_node.disconnect()
+        
+    def stop_robot(self):
+        """Freno de emergencia expuesto para el Router."""
+        if self._is_running and self.gateway_node:
+            self.gateway_node.stop_robot()
 
     def set_control_mode(self, event: str, topic: str = "cmd_vel") -> tuple[bool, str]:
         if self._is_running and self.gateway_node and self.safety_node:

@@ -17,23 +17,21 @@ from app_tiago.core.state_machine import ProtocolStateMachine
 # puede ser de cualquier tipo (ya que depende de la librería externa).
 from typing import Any
 
+# Importamos tu Ros2Manager para el type hinting
+from app_tiago.ros.ros2_node_gateway import Ros2Manager
+
 class ConnectionManager:
-    def __init__(self, state_machine:ProtocolStateMachine):
+    # 🚨 ERROR 1 ARREGLADO: Inyectamos el ros2_manager en el constructor
+    def __init__(self, state_machine: ProtocolStateMachine, ros2_manager: Ros2Manager):
         self.logger = logging.getLogger("ConnectionManager")
         self.state_machine = state_machine
+        self.ros2_manager = ros2_manager # Guardamos la referencia
         
-        # Le decimos a Mypy: "Esto puede ser un Websocket (Any) O puede ser None"
         self.active_websocket: Any | None = None
-        
-        # Le decimos a Mypy: "Esto puede ser un texto (str) O puede ser None"
         self.current_session_id: str | None = None
         
         self.ping_timeout: float = 3.0 
-        
-        # ERROR 1 ARREGLADO: Cambiamos 0 por 0.0 para que Mypy sepa que es un float
         self.last_ping_time: float = 0.0
-        
-        # ERROR 2 ARREGLADO: Le decimos que esto albergará una tarea asíncrona O None
         self.watchdog_task: asyncio.Task[Any] | None = None
 
     # ==========================================
@@ -75,6 +73,11 @@ class ConnectionManager:
             
             # Avisamos a la máquina de estados para que pare el robot y vuelva al estado inicial
             self.state_machine.trigger_session_reset()
+
+            # 🚨 ERROR 1 ARREGLADO: SEGURIDAD FÍSICA 🚨
+            # Freno de emergencia incondicional en caso de desconexión.
+            self.logger.warning("Parada de hombre muerto (Deadman Switch) activada: Frenando robot y cerrando conexión ROS 2.")
+            self.ros2_manager.disconnect_from_robot()
 
     # ==========================================
     # GESTIÓN DE SESIÓN LÓGICA (Protocolo)

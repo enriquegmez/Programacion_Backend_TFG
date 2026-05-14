@@ -9,7 +9,6 @@ import logging
 import sys
 
 # Importamos todos nuestros módulos
-from app_tiago.utils.constants import SERVER_IP, SERVER_PORT
 from app_tiago.core.state_machine import ProtocolStateMachine
 from app_tiago.communication.connection_manager import ConnectionManager
 from app_tiago.core.router import MessageRouter

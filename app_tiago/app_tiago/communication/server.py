@@ -9,7 +9,7 @@ import logging
 from websockets.asyncio.server import serve, ServerConnection
 from websockets.exceptions import ConnectionClosed
 
-from utils.constants import SERVER_IP, SERVER_PORT
+from app_tiago.utils.constants import SERVER_IP, SERVER_PORT
 
 class AppServer:
     def __init__(self, connection_manager, router):
@@ -50,10 +50,18 @@ class AppServer:
         
         try:
             async for raw_message in websocket:
-                self.logger.debug(f"Mensaje crudo recibido: {raw_message}")
+                # 1. Aseguramos que el mensaje es puro texto (str)
+                # Si llega como binario (bytes), lo decodificamos a UTF-8.
+                if isinstance(raw_message, bytes):
+                    text_message = raw_message.decode("utf-8")
+                else:
+                    text_message = raw_message
+
+                # 2. Ahora ya podemos imprimirlo sin que Mypy se enfade
+                self.logger.debug(f"Mensaje crudo recibido: {text_message}")
                 
                 # Le pasamos el string crudo y la "tubería" de salida
-                await self.router.handle_raw_message(raw_message, send_callback)
+                await self.router.handle_raw_message(raw_message, send_callback, close_callback)
 
         except ConnectionClosed as e:
             self.logger.warning(f"Cliente desconectado de forma esperada/inesperada: {e}")

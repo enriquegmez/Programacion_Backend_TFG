@@ -8,10 +8,10 @@ import json
 import time
 import logging
 import dataclasses
-from typing import Dict, Any, Optional
+from typing import Any
 
-from utils.constants import MsgType, StatusCode, RespType
-from protocol.models import (
+from app_tiago.utils.constants import MsgType, StatusCode, RespType
+from app_tiago.protocol.models import (
     RobotMessage, MessageHeader, CommandReqPayload, QueryReqPayload,
     ActionReqPayload, ControlModeReqPayload, ControlReqPayload, ControlData,
     StreamReqPayload, StopStreamReqPayload, AsyncNotifyPayload,
@@ -19,7 +19,7 @@ from protocol.models import (
     ActionFeedbackPayload, StreamRespPayload, GenericRespPayload
 )
 
-from protocol.validator import ProtocolValidator
+from app_tiago.protocol.validator import ProtocolValidator
 
 class MessageCodec:
     def __init__(self):
@@ -66,6 +66,8 @@ class MessageCodec:
 
         # 2. Extraer Payload según el tipo de mensaje
         raw_payload = parsed_dict.get("payload", {})
+
+        payload: Any
         
         try:
             if msg_type == MsgType.COMMAND_REQ:

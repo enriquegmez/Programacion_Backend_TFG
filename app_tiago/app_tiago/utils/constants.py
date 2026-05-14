@@ -69,6 +69,7 @@ class StatusCode:
     FORBIDDEN = 403          # Acción no permitida (ej: batería baja)
     NOT_ALLOWED = 405        # Estado incorrecto para esa petición
     INTERNAL_ERROR = 500     # Fallo en el backend o en ROS 2
+    NOT_FOUND = 404
 
 # --- ESTADOS DEL SERVIDOR (Para state_machine.py) ---
 class ServerState:

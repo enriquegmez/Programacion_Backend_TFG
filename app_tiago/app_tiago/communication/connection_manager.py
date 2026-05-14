@@ -10,22 +10,31 @@ import logging
 import time
 import uuid
 
-from utils.constants import ServerState
+from app_tiago.utils.constants import ServerState
+from app_tiago.core.state_machine import ProtocolStateMachine
+
+# IMPORTANTE: Añade Any a tus imports para decirle a Mypy que el websocket 
+# puede ser de cualquier tipo (ya que depende de la librería externa).
+from typing import Any
 
 class ConnectionManager:
-    def __init__(self, state_machine):
+    def __init__(self, state_machine:ProtocolStateMachine):
         self.logger = logging.getLogger("ConnectionManager")
         self.state_machine = state_machine
         
-        # Estado de la conexión física
-        self.active_websocket = None
-        self.current_session_id = None
+        # Le decimos a Mypy: "Esto puede ser un Websocket (Any) O puede ser None"
+        self.active_websocket: Any | None = None
         
-        # Configuración del Watchdog (Heartbeat)
-        # Si el móvil envía un ping cada 1 segundo, 3 segundos es un margen seguro para latencia
-        self.ping_timeout = 3.0 
-        self.last_ping_time = 0
-        self.watchdog_task = None
+        # Le decimos a Mypy: "Esto puede ser un texto (str) O puede ser None"
+        self.current_session_id: str | None = None
+        
+        self.ping_timeout: float = 3.0 
+        
+        # ERROR 1 ARREGLADO: Cambiamos 0 por 0.0 para que Mypy sepa que es un float
+        self.last_ping_time: float = 0.0
+        
+        # ERROR 2 ARREGLADO: Le decimos que esto albergará una tarea asíncrona O None
+        self.watchdog_task: asyncio.Task[Any] | None = None
 
     # ==========================================
     # GESTIÓN FÍSICA (WebSockets)
@@ -65,7 +74,7 @@ class ConnectionManager:
                 self.watchdog_task = None
             
             # Avisamos a la máquina de estados para que pare el robot y vuelva al estado inicial
-            self.state_machine.trigger_protocol_abort()
+            self.state_machine.trigger_session_reset()
 
     # ==========================================
     # GESTIÓN DE SESIÓN LÓGICA (Protocolo)

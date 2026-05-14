@@ -6,11 +6,13 @@ las consolida solo si hay éxito (commit_transition).
 """
 
 import logging
-from utils.constants import (
+from typing import cast # <-- ¡NUEVO! Importamos cast
+from app_tiago.utils.constants import (
     MsgType, Action, ControlEvent, 
     ServerState, MovementState, StatusCode
 )
-from protocol.models import RobotMessage
+# <-- ¡NUEVO! Importamos los payloads específicos que vamos a leer
+from app_tiago.protocol.models import RobotMessage, CommandReqPayload, ControlModeReqPayload
 
 class ProtocolStateMachine:
     def __init__(self):
@@ -32,7 +34,9 @@ class ProtocolStateMachine:
         # 1. ESTADO GLOBAL: CONEXION BACKEND
         if self.global_state == ServerState.CONEXION_BACKEND:
             if msg_type == MsgType.COMMAND_REQ:
-                action = msg.payload.action
+                # SOLUCIÓN: Usamos cast para acceder a 'action' de forma segura
+                cmd_payload = cast(CommandReqPayload, msg.payload)
+                action = cmd_payload.action
                 if action in [Action.CONNECT, Action.END]:
                     return True, StatusCode.OK, ""
                 return False, StatusCode.NOT_ALLOWED, f"Acción '{action}' denegada. Primero envíe 'connect'."
@@ -41,14 +45,22 @@ class ProtocolStateMachine:
         # 2. ESTADO GLOBAL: SESION INICIADA
         elif self.global_state == ServerState.SESION_INICIADA:
             if msg_type == MsgType.COMMAND_REQ:
-                if msg.payload.action == Action.DISCONNECT:
+                # SOLUCIÓN: Usamos cast de nuevo
+                cmd_payload = cast(CommandReqPayload, msg.payload)
+                if cmd_payload.action == Action.DISCONNECT:
                     return True, StatusCode.OK, ""
-                return False, StatusCode.NOT_ALLOWED, f"Acción '{msg.payload.action}' denegada."
+                return False, StatusCode.NOT_ALLOWED, f"Acción '{cmd_payload.action}' denegada."
 
             elif msg_type in [MsgType.CONTROL_MODE_REQ, MsgType.CONTROL_REQ]:
+                # SOLUCIÓN: Extraemos el evento de forma segura solo si es un CONTROL_MODE_REQ
+                event = None
+                if msg_type == MsgType.CONTROL_MODE_REQ:
+                    cm_payload = cast(ControlModeReqPayload, msg.payload)
+                    event = cm_payload.event
+
                 # Estado actual: IDLE
                 if self.movement_state == MovementState.IDLE:
-                    if msg_type == MsgType.CONTROL_MODE_REQ and msg.payload.event == ControlEvent.START:
+                    if msg_type == MsgType.CONTROL_MODE_REQ and event == ControlEvent.START:
                         return True, StatusCode.OK, ""
                     return False, StatusCode.NOT_ALLOWED, "Comando de movimiento denegado. El estado es IDLE."
                 
@@ -56,7 +68,7 @@ class ProtocolStateMachine:
                 elif self.movement_state == MovementState.RECIBIENDO_INFO:
                     if msg_type == MsgType.CONTROL_REQ:
                         return True, StatusCode.OK, ""
-                    elif msg_type == MsgType.CONTROL_MODE_REQ and msg.payload.event == ControlEvent.STOP:
+                    elif msg_type == MsgType.CONTROL_MODE_REQ and event == ControlEvent.STOP:
                         return True, StatusCode.OK, ""
                     return False, StatusCode.NOT_ALLOWED, "Comando de movimiento denegado. El estado es RECIBIENDO_INFO."
 
@@ -80,7 +92,9 @@ class ProtocolStateMachine:
         req_type = req_msg.header.type
 
         if req_type == MsgType.COMMAND_REQ:
-            action = req_msg.payload.action
+            # SOLUCIÓN: Cast para acceder a 'action'
+            cmd_req_payload = cast(CommandReqPayload, req_msg.payload)
+            action = cmd_req_payload.action
             if success:
                 if action == Action.CONNECT:
                     self.global_state = ServerState.SESION_INICIADA
@@ -92,7 +106,9 @@ class ProtocolStateMachine:
                     self.logger.info("Transición -> FIN DEL PROTOCOLO")
                     
         elif req_type == MsgType.CONTROL_MODE_REQ:
-            event = req_msg.payload.event
+            # SOLUCIÓN: Cast para acceder a 'event'
+            cm_req_payload = cast(ControlModeReqPayload, req_msg.payload)
+            event = cm_req_payload.event
             if success:
                 if event == ControlEvent.START:
                     self.movement_state = MovementState.RECIBIENDO_INFO

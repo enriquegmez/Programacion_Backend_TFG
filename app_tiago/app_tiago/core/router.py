@@ -7,12 +7,14 @@ Orquesta la validación, comprueba los estados y ejecuta las acciones.
 import asyncio
 import logging
 import time
-from utils.constants import MsgType, Action, StatusCode, RespType
-from protocol.models import (
+from typing import cast, Any
+from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType
+from app_tiago.protocol.models import (
     RobotMessage, MessageHeader, GenericRespPayload, 
     ProtocolErrorPayload, EmptyPayload, AsyncNotifyPayload
 )
-from protocol.json_translator import MessageCodec
+from app_tiago.protocol.json_translator import MessageCodec
+from app_tiago.protocol.models import CommandReqPayload, ControlModeReqPayload, ControlReqPayload
 
 class MessageRouter:
     def __init__(self, connection_manager, state_machine, ros_node=None):
@@ -116,7 +118,7 @@ class MessageRouter:
 
         # Cabecera genérica (Eco del ID)
         resp_header = MessageHeader(msg_id=req_msg_id, type=MsgType.RESP, session_id=session_id)
-        resp_payload = None
+        resp_payload: Any = None
 
         match msg_type:
             
@@ -126,7 +128,9 @@ class MessageRouter:
                 resp_payload = EmptyPayload()
 
             case MsgType.COMMAND_REQ:
-                match msg.payload.action:
+                cmd_payload = cast(CommandReqPayload, msg.payload) 
+                action = cmd_payload.action
+                match action:
                     case Action.CONNECT:
                         try:
                             # Intentamos conectar con el hardware/DDS
@@ -148,18 +152,16 @@ class MessageRouter:
                             )
 
                     case Action.DISCONNECT:
-                        disconnect_success = True
                         try:
                             if self.ros_node:
                                 self.ros_node.disconnect_from_robot()
-                        except Exception as e:
-                            disconnect_success = False
-                            
-                        if disconnect_success:
+                                
+                            # Si llega aquí, es que no ha habido errores
                             resp_payload = GenericRespPayload(
                                 success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
                             )
-                        else:
+                        except Exception as e:
+                            # Creamos el payload de error DENTRO del except, donde 'e' todavía existe
                             resp_payload = GenericRespPayload(
                                 success=False, code=StatusCode.INTERNAL_ERROR, 
                                 resp_type=RespType.COMMAND_RESP, details=f"Error al desconectar: {str(e)}"
@@ -172,7 +174,9 @@ class MessageRouter:
                         )
 
             case MsgType.CONTROL_MODE_REQ:
-                event = msg.payload.event
+                # SOLUCIÓN: Usamos cast para que Mypy sepa qué Payload es
+                ctrl_mode_payload = cast(ControlModeReqPayload, msg.payload)
+                event = ctrl_mode_payload.event
                 # Usamos el topic relativo (sin barra) como vimos antes
                 topic = getattr(msg.payload, 'topic', 'cmd_vel')
                 
@@ -199,17 +203,18 @@ class MessageRouter:
                             resp_type=RespType.CONTROL_MODE_RESP, details="Backend ROS 2 no disponible."
                         )
                         
-                except Exception as e:
-                    self.logger.error(f"Excepción en CONTROL_MODE_REQ: {e}")
+                except Exception as err:
+                    self.logger.error(f"Excepción en CONTROL_MODE_REQ: {err}")
                     resp_payload = GenericRespPayload(
                         success=False, code=StatusCode.INTERNAL_ERROR, 
-                        resp_type=RespType.CONTROL_MODE_RESP, details=f"Excepción en el hardware: {str(e)}"
+                        resp_type=RespType.CONTROL_MODE_RESP, details=f"Excepción en el hardware: {str(err)}"
                     )
 
             case MsgType.CONTROL_REQ:
-                v = msg.payload.data.v
-                w = msg.payload.data.w
-                
+                # SOLUCIÓN: Le decimos a Mypy que esto es un ControlReqPayload
+                ctrl_payload = cast(ControlReqPayload, msg.payload)
+                v = ctrl_payload.data.v
+                w = ctrl_payload.data.w
                 publish_success = True
                 if self.ros_node:
                     try:
@@ -254,9 +259,15 @@ class MessageRouter:
             await self._send_msg(resp_msg, send_callback)
             
             # 3. Novedad: Si era END y ha ido bien, llamamos a la función del servidor
-            if msg_type == MsgType.COMMAND_REQ and msg.payload.action == Action.END and resp_payload.success:
-                self.logger.info("Solicitando a server.py el cierre del túnel WebSocket...")
-                await close_callback()
+            # SOLUCIÓN: Usamos cast de nuevo y nos aseguramos de que resp_payload sea GenericRespPayload
+            if msg_type == MsgType.COMMAND_REQ:
+                cmd_payload = cast(CommandReqPayload, msg.payload)
+                if cmd_payload.action == Action.END:
+                    # Comprobamos el success de forma segura con getattr
+                    is_success = getattr(resp_payload, 'success', False)
+                    if is_success:
+                        self.logger.info("Solicitando a server.py el cierre del túnel WebSocket...")
+                        await close_callback()
 
     # ==========================================
     # UTILIDADES

@@ -27,6 +27,7 @@ class MessageRouter:
         # Temporizador para no saturar la red con ControlResp
         self.last_control_resp_time = 0.0
         self.CONTROL_RESP_INTERVAL = 0.5  # Segundos entre ACKs de movimiento
+        self.last_control_req_arrival = 0.0
 
         # Watchdog interno para ROS 2
         self.is_monitoring = False
@@ -184,6 +185,7 @@ class MessageRouter:
                     if self.ros_node:
                         # Extraemos la tupla con el resultado y el mensaje de error
                         success, error_msg = self.ros_node.set_control_mode(event, topic)
+                        self.last_control_req_arrival = 0.0  # Reset del watchdog de intervalo
                         
                         if not success:
                             # 1. Topic no válido o robot desconectado
@@ -211,27 +213,30 @@ class MessageRouter:
                     )
 
             case MsgType.CONTROL_REQ:
-                # SOLUCIÓN: Le decimos a Mypy que esto es un ControlReqPayload
                 ctrl_payload = cast(ControlReqPayload, msg.payload)
                 v = ctrl_payload.data.v
                 w = ctrl_payload.data.w
                 
                 current_time = time.time()
                 publish_success = True
-                
-                # 🛡️ PROTECCIÓN ANTI-LAG (STALE DATA) 🛡️
-                # Calculamos cuánto tiempo ha pasado desde que el móvil creó este mensaje
-                latency = current_time - msg.header.timestamp
-                
-                # Si el mensaje tiene más de 0.5 segundos y el timestamp es válido (>0)
-                if msg.header.timestamp > 0 and latency > 0.5:
-                    self.logger.warning(f"PELIGRO: Paquete caducado por LAG (Latencia: {latency:.2f}s). Descartando.")
+
+                # 🛡️ PROTECCIÓN POR INTERVALO DE LLEGADA (Arrival Watchdog) 🛡️
+                # Calculamos cuánto tiempo ha pasado desde el ÚLTIMO mensaje de control que recibimos
+                if self.last_control_req_arrival > 0:
+                    time_since_last_packet = current_time - self.last_control_req_arrival
+                else:
+                    # Es el primer paquete de la sesión, no hay intervalo que medir
+                    time_since_last_packet = 0.0
+
+                # 1. Si el "hueco" de silencio entre paquetes es > 0.5s, hay un problema de red
+                if time_since_last_packet > 0.5:
+                    self.logger.warning(f"⚠️ HUECO DE RED DETECTADO: {time_since_last_packet:.2f}s sin recibir órdenes. Frenado de seguridad.")
                     publish_success = False
                     if self.ros_node:
-                        # Freno de emergencia por software
                         self.ros_node.stop_robot()
+                
+                # 2. Si el intervalo es correcto, intentamos publicar
                 else:
-                    # El paquete es reciente (o no tiene timestamp), lo enviamos al robot normal
                     if self.ros_node:
                         try:
                             publish_success = self.ros_node.publish_velocity(v, w)
@@ -241,18 +246,27 @@ class MessageRouter:
                     else:
                         publish_success = False
 
-                # AVISO INMEDIATO: Si hay error, nos saltamos la espera para avisar rápido al móvil
+                # ACTUALIZAMOS el marcador de tiempo para el próximo paquete
+                self.last_control_req_arrival = current_time
+
+                # 3. GESTIÓN DE RESPUESTAS AL MÓVIL
+                # Avisamos inmediatamente si hubo error de LAG o si toca enviar el ACK rutinario (cada 0.5s)
                 if not publish_success or (current_time - self.last_control_resp_time >= self.CONTROL_RESP_INTERVAL):
                     self.last_control_resp_time = current_time
                     
-                    if publish_success is False:
+                    if not publish_success:
+                        # Si falló por lag, mandamos detalles específicos para que la UI lo pinte
                         resp_payload = GenericRespPayload(
-                            success=False, code=StatusCode.INTERNAL_ERROR, 
-                            resp_type=RespType.CONTROL_RESP, details="Comando rechazado: Caducado por alto LAG en la red."
+                            success=False, 
+                            code=StatusCode.INTERNAL_ERROR, 
+                            resp_type=RespType.CONTROL_RESP, 
+                            details=f"Frenado de seguridad: Red inestable (Salto de {time_since_last_packet:.2f}s)."
                         )
                     else:
                         resp_payload = GenericRespPayload(
-                            success=True, code=StatusCode.OK, resp_type=RespType.CONTROL_RESP
+                            success=True, 
+                            code=StatusCode.OK, 
+                            resp_type=RespType.CONTROL_RESP
                         )
 
             case MsgType.ACK:

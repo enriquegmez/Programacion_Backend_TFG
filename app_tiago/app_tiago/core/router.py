@@ -63,8 +63,7 @@ class MessageRouter:
                 
                 msg = RobotMessage(header=notify_header, payload=notify_payload)
                 
-                # Le pasamos el mismo mensaje como request y response, la state_machine sabrá qué hacer
-                self.state_machine.commit_transition(msg, msg)
+                self.state_machine.trigger_session_reset()
                 await self._send_msg(msg, send_callback)
                 break 
 

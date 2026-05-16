@@ -154,6 +154,7 @@ class MessageRouter:
                     case Action.DISCONNECT:
                         try:
                             if self.ros_node:
+                                self.ros_node.stop_robot()
                                 self.ros_node.disconnect_from_robot()
                                 
                             # Si llega aquí, es que no ha habido errores

@@ -7,6 +7,7 @@ Maneja el ciclo de vida de rclpy en un hilo dedicado y publica en /cmd_vel.
 import logging
 import threading
 import rclpy
+import time
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from rclpy.executors import SingleThreadedExecutor
@@ -100,7 +101,7 @@ class TiagoBridgeNode(Node):
 
             self.is_control_active = True
             self.logger.info(f"Control de Joystick ACTIVADO. Topic validado: {msg}")
-            return True, "msg"
+            return True, msg
             
         elif event == ControlEvent.STOP:
             self.is_control_active = False
@@ -126,10 +127,16 @@ class TiagoBridgeNode(Node):
 
     def stop_robot(self):
         """Freno por software: Velocidad 0 en todos los ejes."""
-        msg = Twist()
-        msg.linear.x = 0.0
-        msg.angular.z = 0.0
-        self.vel_publisher.publish(msg)
+        try:
+            # Comprobamos que el núcleo de ROS 2 no se haya destruido en otro hilo
+            if rclpy.ok() and self.vel_publisher is not None:
+                msg = Twist()
+                msg.linear.x = 0.0
+                msg.angular.z = 0.0
+                self.vel_publisher.publish(msg)
+        except Exception as e:
+            # Si el publicador explota por culpa del Ctrl+C, lo ignoramos en silencio
+            self.logger.debug(f"Freno omitido por cierre repentino de contexto: {e}")
 
 
 class Ros2Manager:
@@ -182,22 +189,37 @@ class Ros2Manager:
         self.logger.info("Apagando subsistema ROS 2...")
         self._is_running = False
         
-        if self.gateway_node:
-            self.gateway_node.disconnect()
+        try:
+            if self.gateway_node:
+                self.gateway_node.disconnect()
+
+                # --- ¡EL ARREGLO MÁGICO! ---
+            # Le decimos al filtro de seguridad que envíe el freno 
+            # directamente al robot, saltándose las comunicaciones intermedias.
+            if self.safety_node:
+                self.safety_node.stop_robot()
             
-        if self.executor:
-            self.executor.shutdown()
+            # Damos 0.2 segundos a la red DDS para enviar el freno antes de apagar
+            time.sleep(0.2)
+        except Exception:
+            pass
             
-        if self.gateway_node:
-            self.gateway_node.destroy_node()
-        if self.safety_node:
-            self.safety_node.destroy_node()
-            
-        if rclpy.ok():
-            rclpy.shutdown()
-            
-        if self.spin_thread:
-            self.spin_thread.join(timeout=2.0)
+        try:
+            if self.executor:
+                self.executor.shutdown()
+                
+            if self.gateway_node:
+                self.gateway_node.destroy_node()
+            if self.safety_node:
+                self.safety_node.destroy_node()
+                
+            if rclpy.ok():
+                rclpy.shutdown()
+                
+            if self.spin_thread:
+                self.spin_thread.join(timeout=2.0)
+        except Exception as e:
+            self.logger.error(f"Ignorando error durante el cierre forzado de ROS 2: {e}")
 
     # ==========================================
     # API PÚBLICA PARA EL ROUTER

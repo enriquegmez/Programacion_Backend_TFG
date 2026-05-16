@@ -17,9 +17,20 @@ from app_tiago.protocol.models import RobotMessage, CommandReqPayload, ControlMo
 class ProtocolStateMachine:
     def __init__(self):
         self.logger = logging.getLogger("ProtocolStateMachine")
-        self.global_state = ServerState.CONEXION_BACKEND
+        self.global_state = ServerState.IDLE
         self.movement_state = MovementState.IDLE
 
+    def client_connected(self):
+        """Llamado cuando un WebSocket se ancla al servidor."""
+        self.logger.info("Transición Global -> CONEXION_BACKEND (Cliente conectado)")
+        self.global_state = ServerState.CONEXION_BACKEND
+        
+    def client_disconnected(self):
+        """Llamado cuando el WebSocket se rompe o se cierra."""
+        self.logger.info("Transición Global -> IDLE (Servidor esperando clientes)")
+        self.global_state = ServerState.IDLE
+        self.movement_state = MovementState.IDLE
+    
     def can_transition(self, msg: RobotMessage) -> tuple[bool, int, str]:
         """
         SOLO EVALÚA: Comprueba si el mensaje es válido en el estado actual.
@@ -30,8 +41,12 @@ class ProtocolStateMachine:
         # 0. MENSAJES TRANSVERSALES
         if msg_type in [MsgType.PING_REQ, MsgType.ACK]:
             return True, StatusCode.OK, ""
+        
+        # 1. BLOQUEO EN IDLE
+        if self.global_state == ServerState.IDLE:
+            return False, StatusCode.NOT_ALLOWED, "Servidor en reposo. No hay conexión física."
 
-        # 1. ESTADO GLOBAL: CONEXION BACKEND
+        # 2. ESTADO GLOBAL: CONEXION BACKEND
         if self.global_state == ServerState.CONEXION_BACKEND:
             if msg_type == MsgType.COMMAND_REQ:
                 # SOLUCIÓN: Usamos cast para acceder a 'action' de forma segura

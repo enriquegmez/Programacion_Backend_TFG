@@ -73,6 +73,7 @@ class StatusCode:
 
 # --- ESTADOS DEL SERVIDOR (Para state_machine.py) ---
 class ServerState:
+    IDLE = "IDLE"
     CONEXION_BACKEND = "CONEXION_BACKEND"
     SESION_INICIADA = "SESION_INICIADA"
 

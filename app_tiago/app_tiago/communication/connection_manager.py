@@ -48,6 +48,9 @@ class ConnectionManager:
             await websocket.close(code=1008, reason="El robot ya está en uso")
             return False
 
+        #Avisamos para cambiar estado
+        self.state_machine.client_connected()
+
         self.logger.info("Cliente registrado como conexión principal.")
         self.active_websocket = websocket
         self.current_session_id = None
@@ -71,8 +74,11 @@ class ConnectionManager:
                 self.watchdog_task.cancel()
                 self.watchdog_task = None
             
-            # Avisamos a la máquina de estados para que pare el robot y vuelva al estado inicial
+            # Limpiamos la sesión
             self.state_machine.trigger_session_reset()
+            #Avisamos a la máquina de estados para que pare el robot y vuelva al estado inicial
+            self.logger.info("Volviendo al estado inicial: IDLE")
+            self.state_machine.client_connected()
 
             # 🚨 ERROR 1 ARREGLADO: SEGURIDAD FÍSICA 🚨
             # Freno de emergencia incondicional en caso de desconexión.

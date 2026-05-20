@@ -179,7 +179,9 @@ class MessageRouter:
                 ctrl_mode_payload = cast(ControlModeReqPayload, msg.payload)
                 event = ctrl_mode_payload.event
                 # Usamos el topic relativo (sin barra) como vimos antes
-                topic = getattr(msg.payload, 'topic', 'cmd_vel')
+                # Extraemos el valor que venga. Si es None o una cadena vacía "", usará 'cmd_vel'
+                raw_topic = getattr(msg.payload, 'topic', None)
+                topic = raw_topic if raw_topic else "cmd_vel"
                 
                 try:
                     if self.ros_node:

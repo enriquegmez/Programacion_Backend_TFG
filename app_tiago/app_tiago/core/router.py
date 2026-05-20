@@ -229,7 +229,7 @@ class MessageRouter:
                     time_since_last_packet = 0.0
 
                 # 1. Si el "hueco" de silencio entre paquetes es > 0.5s, hay un problema de red
-                if time_since_last_packet > 0.5:
+                if time_since_last_packet > 0.6:
                     self.logger.warning(f"⚠️ HUECO DE RED DETECTADO: {time_since_last_packet:.2f}s sin recibir órdenes. Frenado de seguridad.")
                     publish_success = False
                     if self.ros_node:

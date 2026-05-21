@@ -54,8 +54,8 @@ class ControlReqPayload:
 @dataclass
 class StreamReqPayload:
     resource: str
-    frequency: int
-    state: str
+    topic: Optional[str] = None
+    quality_level: Optional[str] = None
 
 @dataclass
 class StopStreamReqPayload:

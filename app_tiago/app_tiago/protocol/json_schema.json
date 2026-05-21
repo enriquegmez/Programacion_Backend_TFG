@@ -108,14 +108,26 @@
       "then": {
         "properties": {
           "payload": {
-            "required": ["resource", "frequency", "state"],
+            "required": ["resource"],
             "properties": {
-              "resource": { "type": "string" },
-              "frequency": { "type": "integer", "minimum": 1 },
-              "state": { "type": "string" }
+              "resource": { "type": "string", "enum": ["camera", "lidar", "imu"] },
+              "topic": { "type": "string" },
+              "quality_level": { "type": "string", "enum": ["low", "medium", "high"] }
             }
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "payload": { "properties": { "resource": { "const": "camera" } } } } },
+            "then": {
+              "properties": {
+                "payload": {
+                  "required": ["topic", "quality_level"]
+                }
+              }
+            }
+          }
+        ]
       }
     },
     {
@@ -125,7 +137,7 @@
           "payload": {
             "required": ["resource"],
             "properties": {
-              "resource": { "type": "string" }
+              "resource": { "type": "string", "enum": ["camera", "lidar", "imu"] }
             }
           }
         }
@@ -174,7 +186,7 @@
                  "type": "string",
                  "enum": [
                    "COMMAND_RESP", "QUERY_RESP", "ACTION_FEEDBACK", "STOP_ACTION_FEEDBACK", 
-                   "CONTROL_MODE_RESP", "CONTROL_RESP", "STREAM_RESP",  "STOP_STREAM_RESP"
+                   "CONTROL_MODE_RESP", "CONTROL_RESP", "STREAM_RESP", "STOP_STREAM_RESP"
                  ]
                },
                "resp_data": { "type": "object" }

@@ -8,7 +8,7 @@ las consolida solo si hay éxito (commit_transition).
 import logging
 from typing import cast # <-- ¡NUEVO! Importamos cast
 from app_tiago.utils.constants import (
-    MsgType, Action, ControlEvent, 
+    MonitorState, MsgType, Action, ControlEvent, 
     ServerState, MovementState, StatusCode
 )
 # <-- ¡NUEVO! Importamos los payloads específicos que vamos a leer
@@ -19,6 +19,7 @@ class ProtocolStateMachine:
         self.logger = logging.getLogger("ProtocolStateMachine")
         self.global_state = ServerState.IDLE
         self.movement_state = MovementState.IDLE
+        self.monitor_state = MonitorState.IDLE
 
     def client_connected(self):
         """Llamado cuando un WebSocket se ancla al servidor."""
@@ -30,6 +31,7 @@ class ProtocolStateMachine:
         self.logger.info("Transición Global -> IDLE (Servidor esperando clientes)")
         self.global_state = ServerState.IDLE
         self.movement_state = MovementState.IDLE
+        self.monitor_state = MonitorState.IDLE
     
     def can_transition(self, msg: RobotMessage) -> tuple[bool, int, str]:
         """
@@ -59,6 +61,7 @@ class ProtocolStateMachine:
 
         # 2. ESTADO GLOBAL: SESION INICIADA
         elif self.global_state == ServerState.SESION_INICIADA:
+            # --- SUBMÁQUINA DE SESIÓN Y COMANDOS ---
             if msg_type == MsgType.COMMAND_REQ:
                 # SOLUCIÓN: Usamos cast de nuevo
                 cmd_payload = cast(CommandReqPayload, msg.payload)
@@ -66,6 +69,7 @@ class ProtocolStateMachine:
                     return True, StatusCode.OK, ""
                 return False, StatusCode.NOT_ALLOWED, f"Acción '{cmd_payload.action}' denegada."
 
+            # --- SUBMÁQUINA CONCURRENTE A: MOVIMIENTO ---
             elif msg_type in [MsgType.CONTROL_MODE_REQ, MsgType.CONTROL_REQ]:
                 # SOLUCIÓN: Extraemos el evento de forma segura solo si es un CONTROL_MODE_REQ
                 event = None
@@ -86,6 +90,17 @@ class ProtocolStateMachine:
                     elif msg_type == MsgType.CONTROL_MODE_REQ and event == ControlEvent.STOP:
                         return True, StatusCode.OK, ""
                     return False, StatusCode.NOT_ALLOWED, "Comando de movimiento denegado. El estado es RECIBIENDO_INFO."
+
+            # --- SUBMÁQUINA CONCURRENTE B: MONITORIZACIÓN (VÍDEO/SENSORES) ---
+            elif self.monitor_state == MonitorState.IDLE:
+                if msg_type == MsgType.STREAM_REQ:
+                    return True, StatusCode.OK, ""
+                return False, StatusCode.NOT_ALLOWED, "Petición de stream denegada. Ya hay un stream enviándose."
+                
+            elif self.monitor_state == MonitorState.ENVIANDO_STREAM:
+                if msg_type == MsgType.STOP_STREAM_REQ:
+                    return True, StatusCode.OK, ""
+                return False, StatusCode.NOT_ALLOWED, "Petición de parada denegada. No hay ningún stream activo."
 
             return False, StatusCode.NOT_ALLOWED, f"Mensaje '{msg_type}' no soportado en este estado."
             
@@ -136,8 +151,22 @@ class ProtocolStateMachine:
             if not success:
                 self.movement_state = MovementState.IDLE
                 self.logger.warning("Respuesta de Error en CONTROL_REQ. Vuelta a IDLE de emergencia.")
+        
+        # ==========================================
+        # TRANSICIONES CONSOLIDADAS DE MONITORIZACIÓN
+        # ==========================================
+        elif req_type == MsgType.STREAM_REQ:
+            if success:
+                self.monitor_state = MonitorState.ENVIANDO_STREAM
+                self.logger.info("Transición Monitorización -> ENVIANDO_STREAM")
+                
+        elif req_type == MsgType.STOP_STREAM_REQ:
+            if success:
+                self.monitor_state = MonitorState.IDLE
+                self.logger.info("Transición Monitorización -> IDLE")
 
     def trigger_session_reset(self):
         self.logger.info("Limpiando sesión... Volviendo a CONEXION_BACKEND")
         self.global_state = ServerState.CONEXION_BACKEND
         self.movement_state = MovementState.IDLE
+        self.monitor_state = MonitorState.IDLE

@@ -67,6 +67,18 @@ class TiagoBridgeNode(Node):
         
         return len(nodos_robot) > 0
 
+    # ==========================================
+    # ¡NUEVO! COMPROBACIÓN DEL SERVIDOR DE VÍDEO
+    # ==========================================
+    def check_video_server_silently(self) -> bool:
+        """Busca el nodo web_video_server en la red."""
+        try:
+            nodos_activos = self.get_node_names()
+            return 'web_video_server' in nodos_activos
+        except Exception as e:
+            self.logger.error(f"Error buscando el servidor de vídeo: {e}")
+            return False
+        
     def validate_topic(self, topic_name: str) -> tuple[bool, str]:
         """Comprueba en la red ROS 2 si el topic existe y es de tipo Twist."""
         # Limpiamos el nombre (por si llega con espacios o barras raras)
@@ -258,4 +270,12 @@ class Ros2Manager:
     def check_connection(self) -> bool:
         if self._is_running and self.gateway_node:
             return self.gateway_node.check_connection_silently()
+        return False
+    
+    # ==========================================
+    # ¡NUEVO! API PARA EL VÍDEO
+    # ==========================================
+    def is_video_server_running(self) -> bool:
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.check_video_server_silently()
         return False

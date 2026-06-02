@@ -7,6 +7,7 @@ Orquesta la validación, comprueba los estados y ejecuta las acciones.
 import asyncio
 import logging
 import time
+import socket
 from typing import cast, Any
 from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType
 from app_tiago.protocol.models import (
@@ -14,9 +15,17 @@ from app_tiago.protocol.models import (
     ProtocolErrorPayload, EmptyPayload, AsyncNotifyPayload
 )
 from app_tiago.protocol.json_translator import MessageCodec
-from app_tiago.protocol.models import CommandReqPayload, ControlModeReqPayload, ControlReqPayload
+from app_tiago.protocol.models import CommandReqPayload, ControlModeReqPayload, ControlReqPayload, StreamReqPayload, StopStreamReqPayload, StreamRespPayload
 
 class MessageRouter:
+
+    # ¡NUEVO! Abstracción de calidades de cámara
+    CAMERA_PROFILES = {
+        "low": "?width=320&height=240&quality=30",
+        "medium": "?width=640&height=480&quality=60",
+        "high": "?width=1024&height=768&quality=90"
+    }
+
     def __init__(self, connection_manager, state_machine, ros_node=None):
         self.logger = logging.getLogger("MessageRouter")
         self.connection_manager = connection_manager
@@ -32,6 +41,18 @@ class MessageRouter:
         # Watchdog interno para ROS 2
         self.is_monitoring = False
         self.monitor_task = None
+
+    # Para obtener nuestra IP local
+    def _get_local_ip(self) -> str:
+        """Utilidad: Obtiene la IP local del servidor en la red."""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "127.0.0.1"
 
     # ==========================================
     # EL WATCHDOG (Perro Guardián ROS 2)
@@ -270,6 +291,59 @@ class MessageRouter:
                             code=StatusCode.OK, 
                             resp_type=RespType.CONTROL_RESP
                         )
+
+            # ==========================================
+            # NUEVO BLOQUE: MONITORIZACIÓN / VÍDEO
+            # ==========================================
+            case MsgType.STREAM_REQ:
+                stream_payload = cast(StreamReqPayload, msg.payload)
+                
+                if stream_payload.resource == "camera":
+                    topic = stream_payload.topic
+                    if not topic:
+                        resp_payload = StreamRespPayload(
+                            success=False, code=StatusCode.BAD_REQUEST,
+                            details="El topic de la cámara es obligatorio."
+                        )
+                    else:
+                        # --- ¡LA NUEVA COMPROBACIÓN! ---
+                        if self.ros_node and not self.ros_node.is_video_server_running():
+                            self.logger.warning("Petición de vídeo rechazada: web_video_server no está corriendo.")
+                            resp_payload = StreamRespPayload(
+                                success=False, code=StatusCode.INTERNAL_ERROR,
+                                details="El servidor de vídeo del robot está apagado o no responde."
+                            )
+                        else:
+                            server_ip = self._get_local_ip()
+                            if stream_payload.quality_level:  
+                                quality = stream_payload.quality_level
+                            else:                             
+                                quality = "medium"
+                            url_params = self.CAMERA_PROFILES.get(quality, self.CAMERA_PROFILES["medium"])
+                            
+                            final_url = f"http://{server_ip}:8080/stream?topic={topic}{url_params}"
+                            
+                            self.logger.info(f"Stream de cámara solicitado. Asignando URL: {final_url}")
+                            resp_payload = StreamRespPayload(
+                                success=True, code=StatusCode.OK, stream_url=final_url
+                            )
+                else:
+                    # Preparado para el futuro (Lidar, IMU)
+                    resp_payload = StreamRespPayload(
+                        success=False, code=StatusCode.NOT_IMPLEMENTED,
+                        details=f"El recurso '{stream_payload.resource}' aún no está implementado."
+                    )
+
+            #No miramos caso de si el servidor esta apagado para devolver error porque el móvil no tiene por qué saberlo. 
+            # Si el stream no funciona, el móvil lo detectará al no recibir datos y podrá mostrar un mensaje genérico de 
+            # "No se puede mostrar el vídeo".
+            case MsgType.STOP_STREAM_REQ:
+                stop_payload = cast(StopStreamReqPayload, msg.payload)
+                self.logger.info(f"Petición de parada de stream para el recurso: {stop_payload.resource}")
+                # Como usamos Lazy Subscriptions, no hay que matar procesos. Con responder OK basta.
+                resp_payload = GenericRespPayload(
+                    success=True, code=StatusCode.OK, resp_type=RespType.STOP_STREAM_RESP
+                )
 
             case MsgType.ACK:
                 self.logger.debug(f"Recibido ACK del cliente para el msg_id: {req_msg_id}")

@@ -21,9 +21,9 @@ class MessageRouter:
 
     # ¡NUEVO! Abstracción de calidades de cámara
     CAMERA_PROFILES = {
-        "low": "?width=320&height=240&quality=30",
-        "medium": "?width=640&height=480&quality=60",
-        "high": "?width=1024&height=768&quality=90"
+        "low": "&width=320&height=240&quality=30",
+        "medium": "&width=640&height=480&quality=60",
+        "high": "&width=1024&height=768&quality=90"
     }
 
     def __init__(self, connection_manager, state_machine, ros_node=None):
@@ -306,26 +306,31 @@ class MessageRouter:
                             details="El topic de la cámara es obligatorio."
                         )
                     else:
-                        # --- ¡LA NUEVA COMPROBACIÓN! ---
+                        # --- 1. COMPROBAR QUE EL SERVIDOR WEB DE VÍDEO FUNCIONA ---
                         if self.ros_node and not self.ros_node.is_video_server_running():
                             self.logger.warning("Petición de vídeo rechazada: web_video_server no está corriendo.")
                             resp_payload = StreamRespPayload(
                                 success=False, code=StatusCode.INTERNAL_ERROR,
                                 details="El servidor de vídeo del robot está apagado o no responde."
                             )
+                        # --- 2. ¡NUEVA COMPROBACIÓN! EL TOPIC EXISTE EN ROS 2 ---
+                        elif self.ros_node and not self.ros_node.is_topic_active(topic):
+                            self.logger.warning(f"Petición de vídeo rechazada: El topic {topic} no existe en la red.")
+                            resp_payload = StreamRespPayload(
+                                success=False, code=StatusCode.NOT_FOUND,
+                                details=f"La cámara está desconectada o el topic '{topic}' es incorrecto."
+                            )
                         else:
+                            # --- 3. TODO OK: CREAR URL ---
                             server_ip = self._get_local_ip()
-                            if stream_payload.quality_level:  
-                                quality = stream_payload.quality_level
-                            else:                             
-                                quality = "medium"
+                            quality = stream_payload.quality_level if stream_payload.quality_level else "medium"
                             url_params = self.CAMERA_PROFILES.get(quality, self.CAMERA_PROFILES["medium"])
                             
-                            final_url = f"http://{server_ip}:8080/stream?topic={topic}{url_params}"
+                            final_url = f"http://{server_ip}:8081/stream?topic={topic}{url_params}"
                             
                             self.logger.info(f"Stream de cámara solicitado. Asignando URL: {final_url}")
                             resp_payload = StreamRespPayload(
-                                success=True, code=StatusCode.OK, stream_url=final_url
+                                success=True, code=StatusCode.OK, resp_type=RespType.STREAM_RESP, stream_url=final_url
                             )
                 else:
                     # Preparado para el futuro (Lidar, IMU)
@@ -333,7 +338,6 @@ class MessageRouter:
                         success=False, code=StatusCode.NOT_IMPLEMENTED,
                         details=f"El recurso '{stream_payload.resource}' aún no está implementado."
                     )
-
             #No miramos caso de si el servidor esta apagado para devolver error porque el móvil no tiene por qué saberlo. 
             # Si el stream no funciona, el móvil lo detectará al no recibir datos y podrá mostrar un mensaje genérico de 
             # "No se puede mostrar el vídeo".

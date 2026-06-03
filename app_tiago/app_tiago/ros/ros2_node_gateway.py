@@ -66,6 +66,17 @@ class TiagoBridgeNode(Node):
         nodos_robot = [nodo for nodo in nodos_activos if nodo not in nodos_nuestros]
         
         return len(nodos_robot) > 0
+    
+    def is_topic_active(self, topic_name: str) -> bool:
+        """Comprueba en la red ROS 2 si un topic existe, sin importar su tipo de mensaje."""
+        clean_topic = topic_name.strip()
+        topics_and_types = self.get_topic_names_and_types()
+        
+        for name, types in topics_and_types:
+            if name == clean_topic or name.endswith(f'/{clean_topic.lstrip("/")}') or name == f'/{clean_topic}':
+                return True
+                
+        return False
 
     # ==========================================
     # ¡NUEVO! COMPROBACIÓN DEL SERVIDOR DE VÍDEO
@@ -278,4 +289,10 @@ class Ros2Manager:
     def is_video_server_running(self) -> bool:
         if self._is_running and self.gateway_node:
             return self.gateway_node.check_video_server_silently()
+        return False
+    
+    def is_topic_active(self, topic_name: str) -> bool:
+        """Expone la comprobación de topics genéricos para el Router."""
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.is_topic_active(topic_name)
         return False

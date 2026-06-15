@@ -1,0 +1,257 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Protocolo TIAGO Robot - Especificación Completa",
+  "description": "Validación asíncrona para teleoperación concurrente",
+  "type": "object",
+  "required": ["header", "payload"],
+  "properties": {
+    "header": {
+      "type": "object",
+      "required": ["msg_id", "timestamp", "type", "session_id"],
+      "properties": {
+        "msg_id": { "type": "integer", "minimum": 0 },
+        "timestamp": { "type": "number" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "COMMAND_REQ", "RESP", "QUERY_REQ", "ACTION_REQ", "STOP_ACTION_REQ",           
+            "CONTROL_MODE_REQ", "CONTROL_REQ", "STREAM_REQ",  "STOP_STREAM_REQ",            
+            "PING_REQ", "ASYNC_NOTIFY", "PROTOCOL_ERROR", "ACK"
+          ]
+        },
+        "session_id": { "type": "string" }
+      }
+    },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "COMMAND_REQ" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["action"],
+            "properties": {
+              "action": { "enum": ["connect", "disconnect", "change_vars", "end", "get_history", "ssh"] },
+              "param1": { "type": "string" },
+              "param2": { "type": "string" },
+              "param3": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "QUERY_REQ" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["resource_type"],
+            "properties": {
+              "resource_type": { "enum": ["TOPICS", "SENSORS", "ACTIONS", "ROBOT_INFO"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "enum": ["ACTION_REQ", "STOP_ACTION_REQ"] } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["type", "target"],
+            "properties": {
+              "type": { "enum": ["JOINT", "HOME", "EXEC_ACTION"] },
+              "target": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "CONTROL_MODE_REQ" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["event", "type"],
+            "properties": {
+              "event": { "enum": ["START", "STOP"] },
+              "type": { "enum": ["TELEOP", "JOINT"] },
+              "topic": {"type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "CONTROL_REQ" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "v": { "type": "number", "minimum": -2.0, "maximum": 2.0 },
+                  "w": { "type": "number", "minimum": -1.5, "maximum": 1.5 },
+                  "joints": { "type": "array", "items": { "type": "number" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "STREAM_REQ" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["resource"],
+            "properties": {
+              "resource": { "type": "string", "enum": ["camera", "lidar", "imu"] },
+              "topic": { "type": "string" },
+              "quality_level": { "type": "string", "enum": ["low", "medium", "high"] }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "payload": { "properties": { "resource": { "const": "camera" } } } } },
+            "then": {
+              "properties": {
+                "payload": {
+                  "required": ["topic", "quality_level"]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "STOP_STREAM_REQ" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["resource"],
+            "properties": {
+              "resource": { "type": "string", "enum": ["camera", "lidar", "imu"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "ASYNC_NOTIFY" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["type", "details"],
+            "properties": {
+              "type": { "enum": ["session_id","ALERT_BATTERY", "EMERGENCY_STOP", "CONFLICT_NOTIFY"] },
+              "details": { "type": "string" },
+              "severity": { "enum": ["INFO", "WARNING", "CRITICAL"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "PROTOCOL_ERROR" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["error_code", "description"],
+            "properties": {
+              "error_code": { "type": "integer", "enum": [400, 403, 405, 500] },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "header": { "properties": { "type": { "const": "RESP" } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": ["success", "code", "resp_type"],
+            "properties": {
+              "success": { "type": "boolean" },
+              "code": { "type": "integer" },
+              "details": { "type": "string" },
+              "resp_type": {
+                 "type": "string",
+                 "enum": [
+                   "COMMAND_RESP", "QUERY_RESP", "ACTION_FEEDBACK", "STOP_ACTION_FEEDBACK", 
+                   "CONTROL_MODE_RESP", "CONTROL_RESP", "STREAM_RESP", "STOP_STREAM_RESP"
+                 ]
+               },
+               "resp_data": { "type": "object" }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "description": "Capa específica para CONSULTAS",
+            "if": { "properties": { "resp_type": { "const": "QUERY_RESP" }, "success": { "const": true } } },
+            "then": {
+              "required": ["data"],
+              "properties": {
+                "data": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              }
+            }
+          },
+          {
+            "description": "Capa específica para FEEDBACK DE ACCIONES",
+            "if": { "properties": { "resp_type": { "enum": ["ACTION_FEEDBACK", "STOP_ACTION_FEEDBACK"] }, "success": { "const": true } } },
+            "then": {
+              "required": ["done_exec", "progress"],
+              "properties": {
+                "done_exec": { "type": "boolean" },
+                "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "status": { "type": "string" }
+              }
+            }
+          },
+          {
+            "description": "Capa específica para STREAMING",
+            "if": { "properties": { "resp_type": { "const": "STREAM_RESP"   }, "success": { "const": true } } },
+            "then": {
+              "required": ["stream_data"],
+              "properties": {
+                "stream_data": { "type": "object" },
+                "stream_url": { "type": "string" }
+              }
+            }
+          },
+          {
+            "description": "Si success es FALSE, obligamos a que haya un mensaje en details",
+            "if": { "properties": { "success": { "const": false } } },
+            "then": { "required": ["details"] }
+          }
+        ]
+      }
+    },
+        {
+      "if": { "properties": { "header": { "properties": { "type": { "enum": ["PING_REQ", "ACK"] } } } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false,
+            "description": "Este payload debe estar vacío para mensajes de tipo ACK o Heartbeat"
+          }
+        }
+      }
+    }
+  ]
+}

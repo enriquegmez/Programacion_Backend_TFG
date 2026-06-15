@@ -172,17 +172,6 @@ class MessageRouter:
                                 )
                             else:
                                 self.logger.info("Conexión exitosa con el robot.")
-
-                                # ==========================================
-                                # ¡NUEVO! SOLTAMOS AL PERRO GUARDIÁN (WATCHDOG)
-                                # ==========================================
-                                if not self.is_monitoring:
-                                    self.is_monitoring = True
-                                    # Creamos una tarea asíncrona que correrá en paralelo
-                                    self.monitor_task = asyncio.create_task(
-                                        self._monitor_robot_connection(send_callback, session_id)
-                                    )
-
                                 resp_payload = GenericRespPayload(
                                     success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
                                 )
@@ -194,14 +183,6 @@ class MessageRouter:
 
                     case Action.DISCONNECT:
                         try:
-
-                            # ==========================================
-                            # ¡NUEVO! DORMIMOS AL GUARDIÁN
-                            # ==========================================
-                            self.is_monitoring = False
-                            if self.monitor_task:
-                                self.monitor_task.cancel() # Forzamos que la tarea en segundo plano muera
-
                             if self.ros_node:
                                 self.ros_node.stop_robot()
                                 self.ros_node.disconnect_from_robot()
@@ -218,14 +199,6 @@ class MessageRouter:
                             )
 
                     case Action.END:
-
-                        # ==========================================
-                        # ¡NUEVO! DORMIMOS AL GUARDIÁN POR SEGURIDAD
-                        # ==========================================
-                        self.is_monitoring = False
-                        if self.monitor_task:
-                            self.monitor_task.cancel()
-                            
                         # Cortar conexión es seguro, no suele fallar a nivel lógico
                         resp_payload = GenericRespPayload(
                             success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP

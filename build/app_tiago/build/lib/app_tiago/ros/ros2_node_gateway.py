@@ -99,9 +99,9 @@ class TiagoBridgeNode(Node):
         if len(nodos_robot) != len(set(nodos_robot)):
             return 2 # Conflicto
             
-        #cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
-        #if len(cerebros) > 1:
-         #   return 2 # Conflicto
+        cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
+        if len(cerebros) > 1:
+            return 2 # Conflicto
             
         return 1 # Todo correcto
     

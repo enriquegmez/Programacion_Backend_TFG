@@ -15,7 +15,7 @@ def generate_launch_description():
             output='screen' # Para ver tus logs (info, warnings) en la terminal
         ),
         
-        # 2. El servidor de vídeo en segundo plano
+         #2. El servidor de vídeo en segundo plano
         Node(
             package='web_video_server',
             executable='web_video_server',

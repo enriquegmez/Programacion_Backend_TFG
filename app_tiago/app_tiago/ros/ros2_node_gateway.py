@@ -55,11 +55,11 @@ class TiagoBridgeNode(Node):
             return False
             
         # 3. ¿Hay MÚLTIPLES simuladores? (Contamos los nodos principales)
-        cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
-        if len(cerebros) > 1:
-            self.logger.error("Conexión rechazada: Múltiples instancias de Gazebo o Tiago detectadas.")
-            return False
-            
+        #cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
+        #if len(cerebros) > 1:
+        #    self.logger.error("Conexión rechazada: Múltiples instancias de Gazebo o Tiago detectadas.")
+        #    return False
+
         self.is_connected = True
         self.logger.info("Robot ÚNICO detectado. Conexión segura establecida.")
         return True

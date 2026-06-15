@@ -334,6 +334,8 @@ class MessageRouter:
                             server_ip = self._get_local_ip()
                             quality = stream_payload.quality_level if stream_payload.quality_level else "medium"
                             url_params = self.CAMERA_PROFILES.get(quality, self.CAMERA_PROFILES["medium"])
+
+                            #server_ip = "192.168.68.88"
                             
                             final_url = f"http://{server_ip}:8081/stream?topic={topic}{url_params}"
                             

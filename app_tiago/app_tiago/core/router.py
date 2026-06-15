@@ -58,35 +58,44 @@ class MessageRouter:
     # EL WATCHDOG (Perro Guardián ROS 2)
     # ==========================================
     async def _monitor_robot_connection(self, send_callback, session_id):
-        self.logger.info("Watchdog iniciado: Vigilando conexión con el robot...")
+        self.logger.info("Watchdog iniciado: Vigilando conexión y unicidad del robot...")
         
         while self.is_monitoring:
             await asyncio.sleep(2.0)
             
-            if self.ros_node and not self.ros_node.check_connection():
-                self.logger.error("¡Watchdog detecta pérdida de conexión con el robot!")
-                self.is_monitoring = False
+            if self.ros_node:
+                status = self.ros_node.check_connection()
                 
-                self.ros_node.disconnect_from_robot()
-                
-                notify_header = MessageHeader(
-                    msg_id=0, # Auto-generado por el codec
-                    type=MsgType.ASYNC_NOTIFY,
-                    session_id=session_id
-                )
-                
-                # Usamos el payload correcto del Schema para notificaciones asíncronas
-                notify_payload = AsyncNotifyPayload(
-                    type="EMERGENCY_STOP", 
-                    details="ROBOT_CONNECTION_LOST",
-                    severity="CRITICAL"
-                )
-                
-                msg = RobotMessage(header=notify_header, payload=notify_payload)
-                
-                self.state_machine.trigger_session_reset()
-                await self._send_msg(msg, send_callback)
-                break 
+                # Si es 0 (Desconectado) o 2 (Múltiples robots en red)
+                if status == 0 or status == 2:
+                    self.is_monitoring = False
+                    self.ros_node.disconnect_from_robot()
+                    
+                    # Decidimos el mensaje exacto para el móvil
+                    if status == 2:
+                        self.logger.error("¡Watchdog detecta MÚLTIPLES ROBOTS en la red! Abortando teleoperación por seguridad.")
+                        error_detail = "MULTIPLE_ROBOTS_DETECTED"
+                    else:
+                        self.logger.error("¡Watchdog detecta pérdida de conexión con el robot!")
+                        error_detail = "ROBOT_CONNECTION_LOST"
+                        
+                    notify_header = MessageHeader(
+                        msg_id=0,
+                        type=MsgType.ASYNC_NOTIFY,
+                        session_id=session_id
+                    )
+                    
+                    notify_payload = AsyncNotifyPayload(
+                        type="EMERGENCY_STOP", 
+                        details=error_detail,
+                        severity="CRITICAL"
+                    )
+                    
+                    msg = RobotMessage(header=notify_header, payload=notify_payload)
+                    
+                    self.state_machine.trigger_session_reset()
+                    await self._send_msg(msg, send_callback)
+                    break
 
     async def send_session_assigned(self, session_id: str, send_callback):
         header = MessageHeader(msg_id=0, type=MsgType.ASYNC_NOTIFY, session_id=session_id)
@@ -302,7 +311,7 @@ class MessageRouter:
                     topic = stream_payload.topic
                     if not topic:
                         resp_payload = StreamRespPayload(
-                            success=False, code=StatusCode.BAD_REQUEST,
+                            success=False, code=StatusCode.BAD_REQUEST, resp_type=RespType.STREAM_RESP,
                             details="El topic de la cámara es obligatorio."
                         )
                     else:
@@ -310,14 +319,14 @@ class MessageRouter:
                         if self.ros_node and not self.ros_node.is_video_server_running():
                             self.logger.warning("Petición de vídeo rechazada: web_video_server no está corriendo.")
                             resp_payload = StreamRespPayload(
-                                success=False, code=StatusCode.INTERNAL_ERROR,
+                                success=False, code=StatusCode.INTERNAL_ERROR, resp_type=RespType.STREAM_RESP,
                                 details="El servidor de vídeo del robot está apagado o no responde."
                             )
                         # --- 2. ¡NUEVA COMPROBACIÓN! EL TOPIC EXISTE EN ROS 2 ---
                         elif self.ros_node and not self.ros_node.is_topic_active(topic):
                             self.logger.warning(f"Petición de vídeo rechazada: El topic {topic} no existe en la red.")
                             resp_payload = StreamRespPayload(
-                                success=False, code=StatusCode.NOT_FOUND,
+                                success=False, code=StatusCode.NOT_FOUND, resp_type=RespType.STREAM_RESP,
                                 details=f"La cámara está desconectada o el topic '{topic}' es incorrecto."
                             )
                         else:
@@ -335,7 +344,7 @@ class MessageRouter:
                 else:
                     # Preparado para el futuro (Lidar, IMU)
                     resp_payload = StreamRespPayload(
-                        success=False, code=StatusCode.NOT_IMPLEMENTED,
+                        success=False, code=StatusCode.NOT_ALLOWED, resp_type=RespType.STREAM_RESP,
                         details=f"El recurso '{stream_payload.resource}' aún no está implementado."
                     )
             #No miramos caso de si el servidor esta apagado para devolver error porque el móvil no tiene por qué saberlo. 

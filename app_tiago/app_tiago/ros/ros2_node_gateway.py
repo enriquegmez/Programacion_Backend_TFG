@@ -31,21 +31,37 @@ class TiagoBridgeNode(Node):
         self.is_control_active = False
 
     def connect(self) -> bool:
-        """Verifica que existan nodos del robot conectados a la red ROS 2."""
-        # Obtenemos todos los nombres de los nodos activos en la red
+        """Verifica que exista EXACTAMENTE UN robot conectado a la red ROS 2."""
         nodos_activos = self.get_node_names()
+        nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter', 'web_video_server']
         
-        # Excluimos nuestros propios nodos de la lista
-        nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter']
-        nodos_robot = [nodo for nodo in nodos_activos if nodo not in nodos_nuestros]
+        nodos_robot = [
+            nodo for nodo in nodos_activos 
+            if nodo not in nodos_nuestros 
+            and not nodo.startswith('ros2cli') 
+            and not nodo.startswith('_ros2cli') 
+            and not nodo.startswith('launch') 
+            and not nodo.startswith('daemon')
+        ]
         
-        # Si la lista está vacía, no hay ningún robot simulado o real encendido
+        # 1. ¿No hay robot?
         if len(nodos_robot) == 0:
-            self.logger.warning("Conexión rechazada: No se ha detectado ningún nodo del robot en la red (¿Simulador apagado?).")
+            self.logger.warning("Conexión rechazada: No se ha detectado el robot.")
+            return False
+            
+        # 2. ¿Hay MÚLTIPLES robots? (Comprobamos si hay nombres de nodos repetidos)
+        if len(nodos_robot) != len(set(nodos_robot)):
+            self.logger.error("Conexión rechazada: Múltiples robots detectados (Choque de nodos en red).")
+            return False
+            
+        # 3. ¿Hay MÚLTIPLES simuladores? (Contamos los nodos principales)
+        cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
+        if len(cerebros) > 1:
+            self.logger.error("Conexión rechazada: Múltiples instancias de Gazebo o Tiago detectadas.")
             return False
             
         self.is_connected = True
-        self.logger.info(f"Robot detectado en la red. (Nodos ajenos encontrados: {len(nodos_robot)})")
+        self.logger.info("Robot ÚNICO detectado. Conexión segura establecida.")
         return True
 
     def disconnect(self):
@@ -56,16 +72,38 @@ class TiagoBridgeNode(Node):
             self.is_connected = False
             self.is_control_active = False
 
-    def check_connection_silently(self) -> bool:
-        """Comprueba si el robot sigue ahí sin saturar los logs."""
+    def check_connection_silently(self) -> int:
+        """
+        Vigila la red silenciosamente. 
+        Retorna: 1 (OK), 0 (Robot Desconectado), 2 (Múltiples Robots / Conflicto)
+        """
         if not self.is_connected:
-            return False
+            return 0
             
         nodos_activos = self.get_node_names()
-        nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter']
-        nodos_robot = [nodo for nodo in nodos_activos if nodo not in nodos_nuestros]
+        nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter', 'web_video_server']
         
-        return len(nodos_robot) > 0
+        nodos_robot = [
+            nodo for nodo in nodos_activos 
+            if nodo not in nodos_nuestros 
+            and not nodo.startswith('ros2cli') 
+            and not nodo.startswith('_ros2cli') 
+            and not nodo.startswith('launch') 
+            and not nodo.startswith('daemon')
+        ]
+        
+        if len(nodos_robot) == 0:
+            return 0 # Se ha apagado
+            
+        # Si de repente aparecen duplicados, alguien ha encendido otro robot
+        if len(nodos_robot) != len(set(nodos_robot)):
+            return 2 # Conflicto
+            
+        cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
+        if len(cerebros) > 1:
+            return 2 # Conflicto
+            
+        return 1 # Todo correcto
     
     def is_topic_active(self, topic_name: str) -> bool:
         """Comprueba en la red ROS 2 si un topic existe, sin importar su tipo de mensaje."""
@@ -278,10 +316,11 @@ class Ros2Manager:
             return self.gateway_node.publish_velocity(v, w)
         return False
     
-    def check_connection(self) -> bool:
+    def check_connection(self) -> int:
+        # ¡IMPORTANTE! Cambiamos -> bool por -> int para gestionar los 3 estados
         if self._is_running and self.gateway_node:
             return self.gateway_node.check_connection_silently()
-        return False
+        return 0
     
     # ==========================================
     # ¡NUEVO! API PARA EL VÍDEO

@@ -11,7 +11,7 @@ def generate_launch_description():
         Node(
             package='app_tiago',
             executable='server_node',
-            name='tiago_backend_server',
+            #name='tiago_backend_server',
             output='screen' # Para ver tus logs (info, warnings) en la terminal
         ),
         

@@ -1,0 +1,95 @@
+running egg_info
+creating build/app_tiago/app_tiago.egg-info
+writing build/app_tiago/app_tiago.egg-info/PKG-INFO
+writing dependency_links to build/app_tiago/app_tiago.egg-info/dependency_links.txt
+writing entry points to build/app_tiago/app_tiago.egg-info/entry_points.txt
+writing requirements to build/app_tiago/app_tiago.egg-info/requires.txt
+writing top-level names to build/app_tiago/app_tiago.egg-info/top_level.txt
+writing manifest file 'build/app_tiago/app_tiago.egg-info/SOURCES.txt'
+reading manifest file 'build/app_tiago/app_tiago.egg-info/SOURCES.txt'
+adding license file 'LICENSE'
+writing manifest file 'build/app_tiago/app_tiago.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build
+creating /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib
+creating /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago
+copying app_tiago/main.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago
+copying app_tiago/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago
+creating /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/utils
+copying app_tiago/utils/constants.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/utils
+copying app_tiago/utils/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/utils
+creating /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/core
+copying app_tiago/core/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/core
+copying app_tiago/core/router.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/core
+copying app_tiago/core/state_machine.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/core
+creating /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/ros
+copying app_tiago/ros/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/ros
+copying app_tiago/ros/ros2_node_gateway.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/ros
+copying app_tiago/ros/ros2_core_node.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/ros
+creating /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/communication
+copying app_tiago/communication/server.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/communication
+copying app_tiago/communication/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/communication
+copying app_tiago/communication/connection_manager.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/communication
+creating /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol
+copying app_tiago/protocol/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol
+copying app_tiago/protocol/json_translator.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol
+copying app_tiago/protocol/validator.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol
+copying app_tiago/protocol/models.py -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol
+copying app_tiago/protocol/json_schema.json -> /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol
+running install
+running install_lib
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/main.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/utils
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/utils/constants.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/utils
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/utils/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/utils
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/core
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/core/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/core
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/core/router.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/core
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/core/state_machine.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/core
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/ros
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/ros/ros2_node_gateway.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/ros
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/ros/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/ros
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/ros/ros2_core_node.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/ros
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/communication
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/communication/server.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/communication
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/communication/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/communication
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/communication/connection_manager.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/communication
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol/json_schema.json -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol/validator.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol/__init__.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol/models.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol
+copying /home/user/backend_app_tiago/src/app_tiago/build/app_tiago/build/lib/app_tiago/protocol/json_translator.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/main.py to main.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/utils/constants.py to constants.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/utils/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/core/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/core/router.py to router.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/core/state_machine.py to state_machine.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/ros/ros2_node_gateway.py to ros2_node_gateway.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/ros/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/ros/ros2_core_node.py to ros2_core_node.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/communication/server.py to server.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/communication/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/communication/connection_manager.py to connection_manager.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol/validator.py to validator.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol/models.py to models.cpython-310.pyc
+byte-compiling /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago/protocol/json_translator.py to json_translator.cpython-310.pyc
+running install_data
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/share/ament_index
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/share/ament_index/resource_index
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/share/ament_index/resource_index/packages
+copying resource/app_tiago -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/share/ament_index/resource_index/packages
+copying package.xml -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/share/app_tiago
+creating /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/share/app_tiago/launch
+copying launch/backend.launch.py -> /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/share/app_tiago/launch
+running install_egg_info
+Copying build/app_tiago/app_tiago.egg-info to /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/python3.10/site-packages/app_tiago-0.0.0-py3.10.egg-info
+running install_scripts
+Installing server_node script to /home/user/backend_app_tiago/src/app_tiago/install/app_tiago/lib/app_tiago
+writing list of installed files to '/home/user/backend_app_tiago/src/app_tiago/build/app_tiago/install.log'

@@ -49,6 +49,8 @@ class Action:
 # --- RECURSOS (QueryReq resource_type) ---
 class Resource:
     ROBOT_INFO = "ROBOT_INFO"
+    TELEOP = "TELEOP"
+    CAMERAS = "CAMERAS"
     TOPICS = "TOPICS"
     SENSORS = "SENSORS"
     ACTIONS = "ACTIONS"
@@ -101,3 +103,55 @@ class RobotLimits:
 # --- CONFIGURACIÓN DE TELEOPERACIÓN (Watchdog) ---
 class TeleopConfig:
     TIMEOUT = 0.5  # Segundos sin recibir CONTROL_REQ antes de parar el robot por seguridad
+
+    # --- TIPOS DE MENSAJES DE ROS 2 (Para la Autodetección) ---
+class RosMsgTypes:
+    IMAGE = "sensor_msgs/msg/Image"                  # Cámaras (crudo)
+    COMPRESSED_IMAGE = "sensor_msgs/msg/CompressedImage" # Cámaras comprimidas
+    LASER_SCAN = "sensor_msgs/msg/LaserScan"         # Escáneres láser / LiDAR
+    BATTERY = "sensor_msgs/msg/BatteryState"         # Batería estándar de ROS 2
+    TWIST = "geometry_msgs/msg/Twist"                # Base Móvil (Ruedas)
+    JOINT_TRAJ = "trajectory_msgs/msg/JointTrajectory" # Brazos / Manipuladores
+    OCCUPANCY_GRID = "nav_msgs/msg/OccupancyGrid"    # Mapas de navegación (Nav2)
+    TWIST_STAMPED = "geometry_msgs/msg/TwistStamped"
+    CAMERA_INFO = "sensor_msgs/msg/CameraInfo"
+    POINT_CLOUD2 = "sensor_msgs/msg/PointCloud2"
+    IMU = "sensor_msgs/msg/Imu"                      # Sensor inercial
+    ODOMETRY = "nav_msgs/msg/Odometry"               # Odometría del robot
+    JOINT_STATE = "sensor_msgs/msg/JointState"       # Estado de articulaciones
+    MOVEIT_PLANNING_SCENE = "moveit_msgs/msg/PlanningScene"
+
+# --- CLAVES DEL DICCIONARIO JSON (Para el Frontend) ---
+# Usamos constantes para no equivocarnos al teclear las keys del JSON de respuesta
+class RobotInfoKeys:
+    IDENTITY = "identity"
+    STATUS = "status"
+    CAPABILITIES = "capabilities"
+    
+    # Sub-claves de capacidades
+    HAS_BASE = "has_base"
+    CAMERAS = "cameras"
+    HAS_MANIPULATOR = "has_manipulator"
+    HAS_LIDAR = "has_lidar"
+    HAS_NAV = "has_nav"
+    HAS_MOVEIT = "has_moveit"
+    HAS_GRIPPER = "has_gripper"
+    HAS_ODOMETRY = "has_odometry"
+    HAS_IMU = "has_imu"
+    # --- CONFIGURACIÓN DEL AUTO-DESCUBRIMIENTO (Heurísticas) ---
+class DiscoveryConfig:
+    # Palabras clave para inferir hardware
+    BASE_KEYWORDS = ['cmd_vel', 'base', 'diff']
+    ARM_KEYWORDS = ['controller', 'arm', 'torso']
+    LIDAR_EXCLUDE_KEYWORDS = ['depth', 'voxel']
+    
+    # Procesamiento de nombres de cámara
+    CAMERA_CLEANUP_SUFFIXES = ["/camera_info", "/rgb", "/depth", "/color", "/infra1", "/infra2"]
+    DEFAULT_CAMERA_NAME = "Cámara Principal"
+    
+    # Reemplazo para obtener el topic de vídeo
+    CAMERA_INFO_STR = "camera_info"
+    IMAGE_RAW_STR = "image_raw"
+
+    # Módulos complejos
+    MOVEIT_NODES = ['move_group'] # Nodo principal de MoveIt

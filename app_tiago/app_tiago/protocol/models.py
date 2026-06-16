@@ -90,8 +90,11 @@ class BaseResponsePayload:
 
 @dataclass
 class QueryRespPayload(BaseResponsePayload):
-    """Respuesta específica para QUERY_REQ (añade array de datos)"""
-    data: Optional[List[str]] = None  # Ej: ["/cmd_vel", "/battery_status"]
+    """
+    Respuesta específica para QUERY_REQ.
+    Puede contener una lista de strings (ej. topics) o un diccionario complejo (ROBOT_INFO).
+    """
+    data: Optional[Union[List[str], Dict[str, Any]]] = None
 
 @dataclass
 class ActionFeedbackPayload(BaseResponsePayload):

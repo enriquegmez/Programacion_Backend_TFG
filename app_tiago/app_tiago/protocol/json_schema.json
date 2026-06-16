@@ -48,7 +48,7 @@
           "payload": {
             "required": ["resource_type"],
             "properties": {
-              "resource_type": { "enum": ["TOPICS", "SENSORS", "ACTIONS", "ROBOT_INFO"] }
+              "resource_type": { "enum": ["TOPICS", "SENSORS", "ACTIONS", "ROBOT_INFO", "CAMERAS", "TELEOP"] }
             }
           }
         }
@@ -201,10 +201,18 @@
               "required": ["data"],
               "properties": {
                 "data": {
-                  "type": "array",
-                  "items": { "type": "string" },
-                  "minItems": 1,
-                  "uniqueItems": true
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "minItems": 1,
+                      "uniqueItems": true
+                    },
+                    {
+                      "type": "object",
+                      "description": "Diccionario libre para devolver información estructurada del robot (identidad, capacidades, etc.)"
+                    }
+                  ]
                 }
               }
             }

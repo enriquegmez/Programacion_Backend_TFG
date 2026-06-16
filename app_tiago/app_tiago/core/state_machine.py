@@ -68,6 +68,10 @@ class ProtocolStateMachine:
                 if cmd_payload.action == Action.DISCONNECT:
                     return True, StatusCode.OK, ""
                 return False, StatusCode.NOT_ALLOWED, f"Acción '{cmd_payload.action}' denegada."
+            
+            # --- NUEVA TRANSVERSAL: CONSULTAS ---
+            elif msg_type == MsgType.QUERY_REQ:
+                return True, StatusCode.OK, ""
 
             # --- SUBMÁQUINA CONCURRENTE A: MOVIMIENTO ---
             elif msg_type in [MsgType.CONTROL_MODE_REQ, MsgType.CONTROL_REQ]:
@@ -151,6 +155,13 @@ class ProtocolStateMachine:
             if not success:
                 self.movement_state = MovementState.IDLE
                 self.logger.warning("Respuesta de Error en CONTROL_REQ. Vuelta a IDLE de emergencia.")
+        
+        # --- MANEJO DE QUERIES ---
+        elif req_type == MsgType.QUERY_REQ:
+            # No hay cambios de estado en la máquina, solo se responde.
+            # No hace falta lógica aquí, pero lo incluimos para mantener 
+            # la estructura y evitar que caiga en casos no definidos.
+            pass
         
         # ==========================================
         # TRANSICIONES CONSOLIDADAS DE MONITORIZACIÓN

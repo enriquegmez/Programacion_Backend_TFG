@@ -9,13 +9,13 @@ import logging
 import time
 import socket
 from typing import cast, Any
-from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType, Resource
+from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType
 from app_tiago.protocol.models import (
     RobotMessage, MessageHeader, GenericRespPayload, 
     ProtocolErrorPayload, EmptyPayload, AsyncNotifyPayload
 )
 from app_tiago.protocol.json_translator import MessageCodec
-from app_tiago.protocol.models import CommandReqPayload, ControlModeReqPayload, ControlReqPayload, StreamReqPayload, StopStreamReqPayload, StreamRespPayload, QueryReqPayload, QueryRespPayload
+from app_tiago.protocol.models import CommandReqPayload, ControlModeReqPayload, ControlReqPayload, StreamReqPayload, StopStreamReqPayload, StreamRespPayload
 
 class MessageRouter:
 
@@ -172,17 +172,6 @@ class MessageRouter:
                                 )
                             else:
                                 self.logger.info("Conexión exitosa con el robot.")
-
-                                # ==========================================
-                                # ¡NUEVO! SOLTAMOS AL PERRO GUARDIÁN (WATCHDOG)
-                                # ==========================================
-                                if not self.is_monitoring:
-                                    self.is_monitoring = True
-                                    # Creamos una tarea asíncrona que correrá en paralelo
-                                    self.monitor_task = asyncio.create_task(
-                                        self._monitor_robot_connection(send_callback, session_id)
-                                    )
-
                                 resp_payload = GenericRespPayload(
                                     success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
                                 )
@@ -194,14 +183,6 @@ class MessageRouter:
 
                     case Action.DISCONNECT:
                         try:
-
-                            # ==========================================
-                            # ¡NUEVO! DORMIMOS AL GUARDIÁN
-                            # ==========================================
-                            self.is_monitoring = False
-                            if self.monitor_task:
-                                self.monitor_task.cancel() # Forzamos que la tarea en segundo plano muera
-
                             if self.ros_node:
                                 self.ros_node.stop_robot()
                                 self.ros_node.disconnect_from_robot()
@@ -218,49 +199,11 @@ class MessageRouter:
                             )
 
                     case Action.END:
-
-                        # ==========================================
-                        # ¡NUEVO! DORMIMOS AL GUARDIÁN POR SEGURIDAD
-                        # ==========================================
-                        self.is_monitoring = False
-                        if self.monitor_task:
-                            self.monitor_task.cancel()
-                            
                         # Cortar conexión es seguro, no suele fallar a nivel lógico
                         resp_payload = GenericRespPayload(
                             success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
                         )
 
-            case MsgType.QUERY_REQ:
-                query_payload = cast(QueryReqPayload, msg.payload)
-                resp_data = None
-                
-                if not self.ros_node:
-                    resp_payload = QueryRespPayload(success=False, code=StatusCode.INTERNAL_ERROR, 
-                                                    resp_type=RespType.QUERY_RESP, details="ROS 2 no disponible.")
-                
-                # --- Lógica de selección de recurso ---
-                elif query_payload.resource_type == Resource.TELEOP:
-                    resp_data = self.ros_node.get_teleop_topics()
-                    resp_payload = QueryRespPayload(success=True, code=StatusCode.OK, 
-                                                    resp_type=RespType.QUERY_RESP, data=resp_data)
-                
-                elif query_payload.resource_type == Resource.CAMERAS:
-                    # Nota: Aquí el data será una lista de diccionarios, 
-                    # el Schema lo permite gracias al anyOf que configuramos.
-                    resp_data = self.ros_node.get_camera_topics()
-                    resp_payload = QueryRespPayload(success=True, code=StatusCode.OK, 
-                                                    resp_type=RespType.QUERY_RESP, data=resp_data)
-
-                elif query_payload.resource_type == Resource.ROBOT_INFO:
-                    resp_data = self.ros_node.get_robot_capabilities()
-                    resp_payload = QueryRespPayload(success=True, code=StatusCode.OK, 
-                                                    resp_type=RespType.QUERY_RESP, data=resp_data)
-                
-                else:
-                    resp_payload = QueryRespPayload(success=False, code=StatusCode.NOT_ALLOWED, 
-                                                    resp_type=RespType.QUERY_RESP, details="Recurso desconocido.")
-            
             case MsgType.CONTROL_MODE_REQ:
                 # SOLUCIÓN: Usamos cast para que Mypy sepa qué Payload es
                 ctrl_mode_payload = cast(ControlModeReqPayload, msg.payload)

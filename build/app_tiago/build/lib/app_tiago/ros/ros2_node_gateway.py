@@ -6,17 +6,13 @@ Maneja el ciclo de vida de rclpy en un hilo dedicado y publica en /cmd_vel.
 
 import logging
 import threading
-import rclpy  # type: ignore[import]
+import rclpy
 import time
-import os       # ¡NUEVO! Para leer variables de entorno como ROS_DOMAIN_ID
-import socket   # ¡NUEVO! Para obtener el nombre del host
-from rclpy.node import Dict, Node # type: ignore[import]
-from geometry_msgs.msg import Twist # type: ignore[import]
-from rclpy.executors import SingleThreadedExecutor # type: ignore[import]
-from sensor_msgs.msg import BatteryState # type: ignore[import]
-from std_msgs.msg import Bool # type: ignore[import]
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from rclpy.executors import SingleThreadedExecutor
 
-from app_tiago.utils.constants import ControlEvent, RosMsgTypes, RobotInfoKeys, DiscoveryConfig
+from app_tiago.utils.constants import ControlEvent
 from app_tiago.ros.ros2_core_node import SafetyFilterNode
 
 class TiagoBridgeNode(Node):
@@ -28,60 +24,11 @@ class TiagoBridgeNode(Node):
         self.vel_publisher = self.create_publisher(msg_type=Twist, 
                                                    topic='web_teleop/cmd_vel_raw', 
                                                    qos_profile=10)
-        
-        # ==========================================
-        # ¡NUEVO! VARIABLES DE CACHÉ PARA ESTADO VITAL
-        # ==========================================
-        self.latest_battery_pct = 100.0
-        self.latest_estop_active = False
-
-        # Variables para guardar las suscripciones dinámicas
-        self.battery_sub = None
-        self.estop_sub = None
-
-        # ==========================================
-        # SOLUCIÓN C: Temporizador de Auto-Descubrimiento DDS
-        # ==========================================
-        # Se ejecuta cada 2.0 segundos para buscar topics críticos
-        self.discovery_timer = self.create_timer(2.0, self._discovery_timer_callback)
-
         self.logger.info("Puente ROS 2 iniciado. Publicando raw en: /web_teleop/cmd_vel_raw")
 
         # Estado de seguridad
         self.is_connected = False
         self.is_control_active = False
-
-    def _discovery_timer_callback(self):
-        """Busca topics de Batería y E-Stop periódicamente hasta encontrarlos."""
-        # Si ya hemos encontrado ambos, no hacemos más polling para ahorrar CPU
-        if self.battery_sub is not None and self.estop_sub is not None:
-            return
-
-        topics_and_types = self.get_topic_names_and_types()
-
-        for name, types in topics_and_types:
-            # 1. Buscar Batería (SOLUCIÓN 1)
-            if self.battery_sub is None and 'sensor_msgs/msg/BatteryState' in types:
-                self.logger.info(f"¡Topic de Batería auto-descubierto en: {name}!")
-                self.battery_sub = self.create_subscription(BatteryState, name, self._battery_callback, 10)
-                
-            # 2. Buscar E-Stop (SOLUCIÓN B)
-            if self.estop_sub is None and 'std_msgs/msg/Bool' in types:
-                # Filtrar nombres comunes de parada de emergencia
-                if 'estop' in name.lower() or 'emergency' in name.lower():
-                    self.logger.info(f"¡Topic de E-Stop auto-descubierto en: {name}!")
-                    self.estop_sub = self.create_subscription(Bool, name, self._estop_callback, 10)
-    
-    # Callbacks asíncronos para actualizar la caché
-    def _battery_callback(self, msg: BatteryState):
-        if msg.percentage <= 1.0:
-            self.latest_battery_pct = float(msg.percentage * 100.0)
-        else:
-            self.latest_battery_pct = float(msg.percentage)
-
-    def _estop_callback(self, msg: Bool):
-        # Asumimos que True = Botón pulsado (Emergencia)
-        self.latest_estop_active = msg.data
 
     def connect(self) -> bool:
         """Verifica que exista EXACTAMENTE UN robot conectado a la red ROS 2."""
@@ -152,9 +99,9 @@ class TiagoBridgeNode(Node):
         if len(nodos_robot) != len(set(nodos_robot)):
             return 2 # Conflicto
             
-        #cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
-        #if len(cerebros) > 1:
-         #   return 2 # Conflicto
+        cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
+        if len(cerebros) > 1:
+            return 2 # Conflicto
             
         return 1 # Todo correcto
     
@@ -251,232 +198,6 @@ class TiagoBridgeNode(Node):
         except Exception as e:
             # Si el publicador explota por culpa del Ctrl+C, lo ignoramos en silencio
             self.logger.debug(f"Freno omitido por cierre repentino de contexto: {e}")
-
-
-    def get_teleop_topics(self) -> list[str]:
-        """Devuelve topics para teleoperación de base móvil ordenados por relevancia.
-
-        Selecciona tópicos Twist/TwistStamped que claramente son para control de
-        base móvil (requieren palabras clave conocidas como cmd_vel, teleop, etc).
-        Rechaza topics Twist desconocidos o sospechosos por seguridad."""
-        topics_and_types = self.get_topic_names_and_types()
-        safe_teleop_topics: list[str] = []
-
-        # Palabras clave SEGURAS: indican que es control de base móvil
-        safe_base_keywords = [
-            'cmd_vel',
-            'cmd_vel_unstamped',
-            'cmd_vel_stamped',
-            'teleop',
-            'velocity',
-            'twist',
-            'diff_drive',
-            'base_controller',
-            'mobile_base_controller',
-            'wheel',
-            'drive',
-            'movement'
-        ]
-
-        def _topic_priority(topic_name: str) -> int:
-            lower_name = topic_name.lower()
-            for index, keyword in enumerate(safe_base_keywords):
-                if keyword in lower_name:
-                    return index
-            return len(safe_base_keywords)
-
-        for name, types in topics_and_types:
-            if RosMsgTypes.TWIST in types or RosMsgTypes.TWIST_STAMPED in types:
-                lower_name = name.lower()
-                
-                # SEGURIDAD: Solo incluir si tiene palabra clave CONOCIDA de base
-                # Rechaza topics Twist desconocidos o inesperados
-                if any(safe_kw in lower_name for safe_kw in safe_base_keywords):
-                    safe_teleop_topics.append(name)
-                else:
-                    self.logger.debug(
-                        f"Topic Twist excluido (no reconocido como base móvil): {name}. "
-                        f"Debe contener: {', '.join(safe_base_keywords[:3])}..."
-                    )
-
-        # Ordenar por prioridad semántica
-        safe_teleop_topics.sort(key=lambda topic: (_topic_priority(topic), len(topic), topic))
-        
-        if not safe_teleop_topics:
-            self.logger.warning(
-                "No se encontraron topics seguros de teleoperación. "
-                "Verifica que el robot tenga un topic cmd_vel válido."
-            )
-        
-        return safe_teleop_topics
-
-
-
-    def get_camera_topics(self) -> list[str]:
-        """Devuelve tópicos de cámara ordenados por relevancia para web_video_server.
-
-        Detecta topics de tipo Image o CompressedImage, filtra ruido (depth, masks, etc.)
-        y prioriza flujos RGB típicos de cámaras reales (`camera`, `image_raw`, `rgb`)."""
-        topics_and_types = self.get_topic_names_and_types()
-        camera_topics: list[str] = []
-
-        # Palabras clave a excluir (imágenes procesadas o no-RGB)
-        exclude_keywords = [
-            'depth',
-            'disparity',
-            'mask',
-            'segmentation',
-            'semantic',
-            'instance',
-            'optical_flow',
-            'stereo'
-        ]
-
-        # Palabras clave para priorizar (cámaras RGB reales)
-        priority_keywords = [
-            'camera',
-            'image_raw',
-            'rgb',
-            'color',
-            'front',
-            'main'
-        ]
-
-        def _camera_priority(topic_name: str) -> int:
-            lower_name = topic_name.lower()
-            for index, keyword in enumerate(priority_keywords):
-                if keyword in lower_name:
-                    return index
-            return len(priority_keywords)
-
-        for topic_name, types in topics_and_types:
-            if RosMsgTypes.IMAGE in types or RosMsgTypes.COMPRESSED_IMAGE in types:
-                lower_name = topic_name.lower()
-                
-                # Excluir imágenes que no son cámaras RGB
-                if any(excl in lower_name for excl in exclude_keywords):
-                    continue
-                
-                camera_topics.append(topic_name)
-
-        # Ordenar: primero por relevancia semántica, luego por longitud, luego lexicográficamente
-        camera_topics.sort(key=lambda name: (_camera_priority(name), len(name), name))
-        return camera_topics
-    
-    # ==========================================
-    # EL NUEVO DETECTIVE ULTRA-UNIVERSAL
-    # ==========================================
-    def get_robot_info(self) -> dict:
-        """Radiografía universal del robot aplicando heurísticas avanzadas.
-        
-        Detecta capacidades hardware por análisis de topics y servicios ROS 2.
-        Usa `if` independientes (no `elif`) para detectar múltiples capacidades."""
-        hostname = socket.gethostname()
-        domain_id = os.environ.get("ROS_DOMAIN_ID", "0")
-        
-        battery_pct = self.latest_battery_pct
-        e_stop_active = self.latest_estop_active
-        
-        has_base = False
-        cameras_list: list[dict[str, str]] = []  
-        has_manipulator = False
-        has_gripper = False
-        has_lidar = False
-        has_imu = False
-        has_odom = False
-        has_nav = False
-        has_moveit = False
-
-        detected_camera_roots = set()
-        topics_and_types = self.get_topic_names_and_types()
-
-        for topic_name, types in topics_and_types:
-            topic_lower = topic_name.lower()
-            
-            # --- Base Móvil (Twist/TwistStamped) ---
-            # Con `if` para detectar independientemente
-            if RosMsgTypes.TWIST in types or RosMsgTypes.TWIST_STAMPED in types:
-                if any(keyword in topic_lower for keyword in DiscoveryConfig.BASE_KEYWORDS):
-                    has_base = True
-            
-            # --- Cámaras RGB (CameraInfo) ---
-            if RosMsgTypes.CAMERA_INFO in types:
-                hw_root = topic_name
-                for suffix in DiscoveryConfig.CAMERA_CLEANUP_SUFFIXES:
-                    hw_root = hw_root.replace(suffix, "")
-                
-                if hw_root not in detected_camera_roots:
-                    detected_camera_roots.add(hw_root)
-                    display_name = hw_root.split('/')[-1].replace('_', ' ').title()
-                    if not display_name: 
-                        display_name = DiscoveryConfig.DEFAULT_CAMERA_NAME
-
-                    cameras_list.append({"name": display_name})
-            
-            # --- LiDAR (LaserScan o PointCloud2) ---
-            if RosMsgTypes.LASER_SCAN in types:
-                has_lidar = True
-            elif RosMsgTypes.POINT_CLOUD2 in types:
-                # Evitar false positives de software de visión (depth clouds)
-                if not any(excl in topic_lower for excl in DiscoveryConfig.LIDAR_EXCLUDE_KEYWORDS):
-                    has_lidar = True
-            
-            # --- Brazos / Manipuladores ---
-            # JointTrajectory es la forma estándar de mover brazos
-            if RosMsgTypes.JOINT_TRAJ in types:
-                if any(keyword in topic_lower for keyword in DiscoveryConfig.ARM_KEYWORDS):
-                    has_manipulator = True
-            
-            # --- IMU (Sensor inercial) ---
-            if RosMsgTypes.IMU in types:
-                has_imu = True
-            
-            # --- Odometría ---
-            if RosMsgTypes.ODOMETRY in types:
-                has_odom = True
-            
-            # --- Gripper / Actuadores finales ---
-            if RosMsgTypes.JOINT_STATE in types or 'std_msgs/msg/Float64' in types:
-                if any(keyword in topic_lower for keyword in ['gripper', 'hand', 'actuator']):
-                    has_gripper = True
-            
-            # --- Nav2 (Mapas de navegación) ---
-            if RosMsgTypes.OCCUPANCY_GRID in types:
-                has_nav = True
-            
-            # --- MoveIt (Planificación de movimiento) ---
-            if RosMsgTypes.MOVEIT_PLANNING_SCENE in [t.lower() for t in types]:
-                has_moveit = True
-
-        diagnostic = (
-            f"Base={has_base}, Cámaras={len(cameras_list)}, "
-            f"Brazo={has_manipulator}, Gripper={has_gripper}, "
-            f"LiDAR={has_lidar}, IMU={has_imu}, Odom={has_odom}, "
-            f"Nav2={has_nav}, MoveIt={has_moveit}"
-        )
-        self.logger.info(f"Escaneo universal: {diagnostic}")
-        
-        return {
-            RobotInfoKeys.IDENTITY: {
-                "hostname": hostname,
-                "domain_id": domain_id,
-            },
-            RobotInfoKeys.STATUS: {
-                "battery_pct": battery_pct,
-                "e_stop_active": e_stop_active
-            },
-            RobotInfoKeys.CAPABILITIES: {
-                RobotInfoKeys.HAS_BASE: has_base,
-                RobotInfoKeys.CAMERAS: cameras_list,
-                RobotInfoKeys.HAS_MANIPULATOR: has_manipulator,
-                RobotInfoKeys.HAS_GRIPPER: has_gripper,
-                RobotInfoKeys.HAS_IMU: has_imu,
-                RobotInfoKeys.HAS_ODOMETRY: has_odom,
-                RobotInfoKeys.HAS_LIDAR: has_lidar,
-                RobotInfoKeys.HAS_NAV: has_nav,
-                RobotInfoKeys.HAS_MOVEIT: has_moveit
-            }
-        }
 
 
 class Ros2Manager:
@@ -614,22 +335,3 @@ class Ros2Manager:
         if self._is_running and self.gateway_node:
             return self.gateway_node.is_topic_active(topic_name)
         return False
-    
-    def get_teleop_topics(self) -> list[str]:
-        if self._is_running and self.gateway_node:
-            return self.gateway_node.get_teleop_topics()
-        return []
-
-    def get_camera_topics(self) -> list[dict[str, str]]:
-        if self._is_running and self.gateway_node:
-            return self.gateway_node.get_camera_topics()
-        return []
-    
-    # ==========================================
-    # ¡NUEVO! API PARA EL DICCIONARIO
-    # ==========================================
-    def get_robot_capabilities(self) -> dict:
-        """Expone la información del robot para responder a consultas (QueryResp)."""
-        if self._is_running and self.gateway_node:
-            return self.gateway_node.get_robot_info()
-        return {}

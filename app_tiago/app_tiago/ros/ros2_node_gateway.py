@@ -39,6 +39,7 @@ class TiagoBridgeNode(Node):
         self.battery_sub = None
         self.estop_sub = None
 
+
         # ==========================================
         # SOLUCIÓN C: Temporizador de Auto-Descubrimiento DDS
         # ==========================================
@@ -71,6 +72,7 @@ class TiagoBridgeNode(Node):
                 if 'estop' in name.lower() or 'emergency' in name.lower():
                     self.logger.info(f"¡Topic de E-Stop auto-descubierto en: {name}!")
                     self.estop_sub = self.create_subscription(Bool, name, self._estop_callback, 10)
+    
     
     # Callbacks asíncronos para actualizar la caché
     def _battery_callback(self, msg: BatteryState):
@@ -362,7 +364,7 @@ class TiagoBridgeNode(Node):
         # Ordenar: primero por relevancia semántica, luego por longitud, luego lexicográficamente
         camera_topics.sort(key=lambda name: (_camera_priority(name), len(name), name))
         return camera_topics
-    
+
     # ==========================================
     # EL NUEVO DETECTIVE ULTRA-UNIVERSAL
     # ==========================================

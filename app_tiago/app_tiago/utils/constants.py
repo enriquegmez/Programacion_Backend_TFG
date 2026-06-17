@@ -132,17 +132,21 @@ class RobotInfoKeys:
     HAS_BASE = "has_base"
     CAMERAS = "cameras"
     HAS_MANIPULATOR = "has_manipulator"
+    HAS_HEAD = "has_head"
+    HAS_TORSO = "has_torso"
     HAS_LIDAR = "has_lidar"
     HAS_NAV = "has_nav"
     HAS_MOVEIT = "has_moveit"
     HAS_GRIPPER = "has_gripper"
     HAS_ODOMETRY = "has_odometry"
     HAS_IMU = "has_imu"
+    
     # --- CONFIGURACIÓN DEL AUTO-DESCUBRIMIENTO (Heurísticas) ---
 class DiscoveryConfig:
     # Palabras clave para inferir hardware
     BASE_KEYWORDS = ['cmd_vel', 'base', 'diff']
-    ARM_KEYWORDS = ['controller', 'arm', 'torso']
+    ARM_KEYWORDS = ['arm', 'manipulator', 'ur5', 'kinova']
+    GRIPPER_KEYWORDS = ['gripper', 'hand', 'finger']
     LIDAR_EXCLUDE_KEYWORDS = ['depth', 'voxel']
     
     # Procesamiento de nombres de cámara

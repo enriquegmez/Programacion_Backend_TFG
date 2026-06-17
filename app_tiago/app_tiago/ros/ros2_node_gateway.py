@@ -85,7 +85,7 @@ class TiagoBridgeNode(Node):
         # Asumimos que True = Botón pulsado (Emergencia)
         self.latest_estop_active = msg.data
 
-    def connect(self) -> bool:
+    def connect(self) -> int:
         """Verifica que exista EXACTAMENTE UN robot conectado a la red ROS 2."""
         nodos_activos = self.get_node_names()
         nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter', 'web_video_server']
@@ -102,12 +102,13 @@ class TiagoBridgeNode(Node):
         # 1. ¿No hay robot?
         if len(nodos_robot) == 0:
             self.logger.warning("Conexión rechazada: No se ha detectado el robot.")
-            return False
+            return 0
             
+        nodos_sin_bugs = [n for n in nodos_robot if 'add_analyzer_node' not in n]
         # 2. ¿Hay MÚLTIPLES robots? (Comprobamos si hay nombres de nodos repetidos)
-        if len(nodos_robot) != len(set(nodos_robot)):
+        if len(nodos_sin_bugs) != len(set(nodos_sin_bugs)):
             self.logger.error("Conexión rechazada: Múltiples robots detectados (Choque de nodos en red).")
-            return False
+            return 2
             
         # 3. ¿Hay MÚLTIPLES simuladores? (Contamos los nodos principales)
         #cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
@@ -117,7 +118,7 @@ class TiagoBridgeNode(Node):
 
         self.is_connected = True
         self.logger.info("Robot ÚNICO detectado. Conexión segura establecida.")
-        return True
+        return 1
 
     def disconnect(self):
         """Frena el robot y rompe la conexión lógica."""
@@ -150,9 +151,11 @@ class TiagoBridgeNode(Node):
         if len(nodos_robot) == 0:
             return 0 # Se ha apagado
             
-        # Si de repente aparecen duplicados, alguien ha encendido otro robot
-        if len(nodos_robot) != len(set(nodos_robot)):
-            return 2 # Conflicto
+        nodos_sin_bugs = [n for n in nodos_robot if 'add_analyzer_node' not in n]
+        # 2. ¿Hay MÚLTIPLES robots? (Comprobamos si hay nombres de nodos repetidos)
+        if len(nodos_sin_bugs) != len(set(nodos_sin_bugs)):
+            self.logger.error("Conexión rechazada: Múltiples robots detectados (Choque de nodos en red).")
+            return 2
             
         #cerebros = [n for n in nodos_robot if 'gazebo' in n or 'robot_state_publisher' in n]
         #if len(cerebros) > 1:
@@ -372,6 +375,8 @@ class TiagoBridgeNode(Node):
         has_base = False
         cameras_list: list[dict[str, str]] = []  
         has_manipulator = False
+        has_head = False
+        has_torso = False
         has_gripper = False
         has_lidar = False
         has_imu = False
@@ -428,16 +433,24 @@ class TiagoBridgeNode(Node):
                 has_odom = True
             
             # --- Gripper / Actuadores finales ---
-            if RosMsgTypes.JOINT_STATE in types or 'std_msgs/msg/Float64' in types:
-                if any(keyword in topic_lower for keyword in ['gripper', 'hand', 'actuator']):
+            if RosMsgTypes.JOINT_TRAJ in types:
+                if any(keyword in topic_lower for keyword in DiscoveryConfig.GRIPPER_KEYWORDS):
                     has_gripper = True
+
+            # 4. Torso / Elevador
+            if any(keyword in topic_lower for keyword in ['torso', 'lift', 'spine', 'elevator']):
+                has_torso = True
+
+            # 5. Cabeza / Pan-Tilt
+            if any(keyword in topic_lower for keyword in ['head', 'neck', 'pan_tilt', 'ptu']):
+                    has_head = True
             
             # --- Nav2 (Mapas de navegación) ---
             if RosMsgTypes.OCCUPANCY_GRID in types:
                 has_nav = True
             
             # --- MoveIt (Planificación de movimiento) ---
-            if RosMsgTypes.MOVEIT_PLANNING_SCENE in [t.lower() for t in types]:
+            if 'moveit_msgs/msg/PlanningScene' in types:
                 has_moveit = True
 
         teleop_topics: list[str] = []
@@ -453,11 +466,13 @@ class TiagoBridgeNode(Node):
             f"Base={has_base}, Cámaras={len(cameras_list)}, "
             f"Brazo={has_manipulator}, Gripper={has_gripper}, "
             f"LiDAR={has_lidar}, IMU={has_imu}, Odom={has_odom}, "
-            f"Nav2={has_nav}, MoveIt={has_moveit}, "
+            f"Nav2={has_nav}, MoveIt={has_moveit}, Head={has_head}, Torso={has_torso}, "
             f"TeleopTopics={len(teleop_topics)}, CameraTopics={len(camera_topics)}"
         )
         self.logger.info(f"Escaneo universal: {diagnostic}")
-        
+
+        #has_base=False
+        #cameras_list=[]
         return {
             RobotInfoKeys.IDENTITY: {
                 "hostname": hostname,
@@ -473,6 +488,8 @@ class TiagoBridgeNode(Node):
                 "teleop_topics": teleop_topics,
                 "camera_topics": camera_topics,
                 RobotInfoKeys.HAS_MANIPULATOR: has_manipulator,
+                RobotInfoKeys.HAS_HEAD: has_head,
+                RobotInfoKeys.HAS_TORSO: has_torso,
                 RobotInfoKeys.HAS_GRIPPER: has_gripper,
                 RobotInfoKeys.HAS_IMU: has_imu,
                 RobotInfoKeys.HAS_ODOMETRY: has_odom,
@@ -568,10 +585,10 @@ class Ros2Manager:
     # ==========================================
     # API PÚBLICA PARA EL ROUTER
     # ==========================================
-    def connect_to_robot(self) -> bool:
+    def connect_to_robot(self) -> int:
         if self._is_running and self.gateway_node:
             return self.gateway_node.connect()
-        return False
+        return 0 # Si el subsistema está apagado, asumimos que no hay robot
 
     def disconnect_from_robot(self):
         if self._is_running and self.gateway_node:

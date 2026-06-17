@@ -163,35 +163,51 @@ class MessageRouter:
                 match action:
                     case Action.CONNECT:
                         try:
-                            # Intentamos conectar con el hardware/DDS
-                            if self.ros_node and not self.ros_node.connect_to_robot():
-                                # El nodo devuelve False (ej. timeout buscando tópicos)
+                            # Comprobamos que el gestor ROS 2 exista
+                            if not self.ros_node:
                                 resp_payload = GenericRespPayload(
-                                    success=False, code=StatusCode.NOT_FOUND, 
-                                    resp_type=RespType.COMMAND_RESP, details="Robot Tiago no detectado en la red."
+                                    success=False, code=StatusCode.INTERNAL_ERROR, 
+                                    resp_type=RespType.COMMAND_RESP, details="Backend ROS 2 no inicializado."
                                 )
                             else:
-                                self.logger.info("Conexión exitosa con el robot.")
-
-                                # ==========================================
-                                # ¡NUEVO! SOLTAMOS AL PERRO GUARDIÁN (WATCHDOG)
-                                # ==========================================
-                                if not self.is_monitoring:
-                                    self.is_monitoring = True
-                                    # Creamos una tarea asíncrona que correrá en paralelo
-                                    self.monitor_task = asyncio.create_task(
-                                        self._monitor_robot_connection(send_callback, session_id)
+                                # Llamamos a la función que ahora devuelve un int (0, 1 o 2)
+                                connection_status = self.ros_node.connect_to_robot()
+                                
+                                if connection_status == 0:
+                                    # Estado 0: No hay robot
+                                    resp_payload = GenericRespPayload(
+                                        success=False, code=StatusCode.NOT_FOUND, 
+                                        resp_type=RespType.COMMAND_RESP, details="Robot Tiago no detectado en la red."
                                     )
+                                elif connection_status == 2:
+                                    # Estado 2: Conflicto / Múltiples robots
+                                    # Usamos BAD_REQUEST o un código similar para indicar conflicto
+                                    resp_payload = GenericRespPayload(
+                                        success=False, code=StatusCode.BAD_REQUEST, 
+                                        resp_type=RespType.COMMAND_RESP, details="Conflicto: Múltiples robots detectados en la misma red Wi-Fi."
+                                    )
+                                elif connection_status == 1:
+                                    # Estado 1: Todo OK
+                                    self.logger.info("Conexión exitosa con el robot.")
 
-                                resp_payload = GenericRespPayload(
-                                    success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
-                                )
+                                    # ==========================================
+                                    # ¡NUEVO! SOLTAMOS AL PERRO GUARDIÁN (WATCHDOG)
+                                    # ==========================================
+                                    if not self.is_monitoring:
+                                        self.is_monitoring = True
+                                        # Creamos una tarea asíncrona que correrá en paralelo
+                                        self.monitor_task = asyncio.create_task(
+                                            self._monitor_robot_connection(send_callback, session_id)
+                                        )
+
+                                    resp_payload = GenericRespPayload(
+                                        success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
+                                    )
                         except Exception as e:
                             resp_payload = GenericRespPayload(
                                 success=False, code=StatusCode.INTERNAL_ERROR, 
-                                resp_type=RespType.COMMAND_RESP, details=f"Error al conectar: {str(e)}"
+                                resp_type=RespType.COMMAND_RESP, details=f"Error interno al conectar: {str(e)}"
                             )
-
                     case Action.DISCONNECT:
                         try:
 

@@ -133,6 +133,7 @@ class ProtocolStateMachine:
                 if action == Action.CONNECT:
                     self.global_state = ServerState.SESION_INICIADA
                     self.movement_state = MovementState.IDLE
+                    self.monitor_state = MonitorState.IDLE
                     self.logger.info("Transición Global -> SESION_INICIADA")
                 elif action == Action.DISCONNECT:
                     self.trigger_session_reset()

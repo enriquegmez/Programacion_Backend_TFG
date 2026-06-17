@@ -233,33 +233,34 @@ class MessageRouter:
 
             case MsgType.QUERY_REQ:
                 query_payload = cast(QueryReqPayload, msg.payload)
-                resp_data = None
                 
                 if not self.ros_node:
-                    resp_payload = QueryRespPayload(success=False, code=StatusCode.INTERNAL_ERROR, 
-                                                    resp_type=RespType.QUERY_RESP, details="ROS 2 no disponible.")
+                    resp_payload = QueryRespPayload(
+                        success=False, 
+                        code=StatusCode.INTERNAL_ERROR, 
+                        resp_type=RespType.QUERY_RESP, 
+                        details="ROS 2 no disponible."
+                    )
                 
                 # --- Lógica de selección de recurso ---
-                elif query_payload.resource_type == Resource.TELEOP:
-                    resp_data = self.ros_node.get_teleop_topics()
-                    resp_payload = QueryRespPayload(success=True, code=StatusCode.OK, 
-                                                    resp_type=RespType.QUERY_RESP, data=resp_data)
-                
-                elif query_payload.resource_type == Resource.CAMERAS:
-                    # Nota: Aquí el data será una lista de diccionarios, 
-                    # el Schema lo permite gracias al anyOf que configuramos.
-                    resp_data = self.ros_node.get_camera_topics()
-                    resp_payload = QueryRespPayload(success=True, code=StatusCode.OK, 
-                                                    resp_type=RespType.QUERY_RESP, data=resp_data)
-
                 elif query_payload.resource_type == Resource.ROBOT_INFO:
+                    # Esta llamada ahora recopila TODA la información, 
+                    # incluyendo teleop_topics y camera_topics
                     resp_data = self.ros_node.get_robot_capabilities()
-                    resp_payload = QueryRespPayload(success=True, code=StatusCode.OK, 
-                                                    resp_type=RespType.QUERY_RESP, data=resp_data)
+                    resp_payload = QueryRespPayload(
+                        success=True, 
+                        code=StatusCode.OK, 
+                        resp_type=RespType.QUERY_RESP, 
+                        data=resp_data
+                    )
                 
                 else:
-                    resp_payload = QueryRespPayload(success=False, code=StatusCode.NOT_ALLOWED, 
-                                                    resp_type=RespType.QUERY_RESP, details="Recurso desconocido.")
+                    resp_payload = QueryRespPayload(
+                        success=False, 
+                        code=StatusCode.NOT_ALLOWED, 
+                        resp_type=RespType.QUERY_RESP, 
+                        details=f"Recurso '{query_payload.resource_type}' desconocido o no soportado."
+                    )
             
             case MsgType.CONTROL_MODE_REQ:
                 # SOLUCIÓN: Usamos cast para que Mypy sepa qué Payload es

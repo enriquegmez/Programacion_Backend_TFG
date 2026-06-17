@@ -289,24 +289,14 @@ class TiagoBridgeNode(Node):
 
         for name, types in topics_and_types:
             if RosMsgTypes.TWIST in types or RosMsgTypes.TWIST_STAMPED in types:
-                lower_name = name.lower()
-                
-                # SEGURIDAD: Solo incluir si tiene palabra clave CONOCIDA de base
-                # Rechaza topics Twist desconocidos o inesperados
-                if any(safe_kw in lower_name for safe_kw in safe_base_keywords):
-                    safe_teleop_topics.append(name)
-                else:
-                    self.logger.debug(
-                        f"Topic Twist excluido (no reconocido como base móvil): {name}. "
-                        f"Debe contener: {', '.join(safe_base_keywords[:3])}..."
-                    )
+                safe_teleop_topics.append(name)
 
         # Ordenar por prioridad semántica
         safe_teleop_topics.sort(key=lambda topic: (_topic_priority(topic), len(topic), topic))
         
         if not safe_teleop_topics:
             self.logger.warning(
-                "No se encontraron topics seguros de teleoperación. "
+                "No se encontraron topics de teleoperación Twist/TwistStamped. "
                 "Verifica que el robot tenga un topic cmd_vel válido."
             )
         
@@ -450,11 +440,21 @@ class TiagoBridgeNode(Node):
             if RosMsgTypes.MOVEIT_PLANNING_SCENE in [t.lower() for t in types]:
                 has_moveit = True
 
+        teleop_topics: list[str] = []
+        camera_topics: list[str] = []
+
+        if has_base:
+            teleop_topics = self.get_teleop_topics()
+
+        if cameras_list:
+            camera_topics = self.get_camera_topics()
+
         diagnostic = (
             f"Base={has_base}, Cámaras={len(cameras_list)}, "
             f"Brazo={has_manipulator}, Gripper={has_gripper}, "
             f"LiDAR={has_lidar}, IMU={has_imu}, Odom={has_odom}, "
-            f"Nav2={has_nav}, MoveIt={has_moveit}"
+            f"Nav2={has_nav}, MoveIt={has_moveit}, "
+            f"TeleopTopics={len(teleop_topics)}, CameraTopics={len(camera_topics)}"
         )
         self.logger.info(f"Escaneo universal: {diagnostic}")
         
@@ -470,6 +470,8 @@ class TiagoBridgeNode(Node):
             RobotInfoKeys.CAPABILITIES: {
                 RobotInfoKeys.HAS_BASE: has_base,
                 RobotInfoKeys.CAMERAS: cameras_list,
+                "teleop_topics": teleop_topics,
+                "camera_topics": camera_topics,
                 RobotInfoKeys.HAS_MANIPULATOR: has_manipulator,
                 RobotInfoKeys.HAS_GRIPPER: has_gripper,
                 RobotInfoKeys.HAS_IMU: has_imu,

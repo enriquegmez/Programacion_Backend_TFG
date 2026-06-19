@@ -10,6 +10,7 @@ import rclpy # type: ignore[import]
 import time
 import os
 import socket
+from rclpy.timer import Timer
 from typing import Any, Optional, Callable # <-- ¡NUEVO! Importamos Callable
 from rclpy.node import Node  # type: ignore[import]
 from geometry_msgs.msg import Twist # type: ignore[import]
@@ -58,7 +59,15 @@ class TiagoBridgeNode(Node):
         self._action_lock = threading.Lock()
         
         # ¡NUEVO! Referencia a la función del Router que enviará el WebSocket
-        self._router_feedback_callback: Optional[Callable[[bool, int, str], None]] = None
+        self._router_feedback_callback: Optional[Callable[[bool, bool, int, str], None]] = None
+
+        # ==========================================
+        # ¡NUEVO! Declaramos las variables del cronómetro aquí para que Mypy sea feliz
+        # ==========================================
+        self.action_progress_timer: Optional[Timer] = None
+        self.action_start_time: float = 0.0
+        self.current_motion_total_duration: float = 0.0
+        self._fake_progress: int = 0
 
         self.discovery_timer = self.create_timer(2.0, self._discovery_timer_callback)
         self.logger.info("Puente ROS 2 iniciado. Publicando raw en: /web_teleop/cmd_vel_raw")
@@ -340,9 +349,7 @@ class TiagoBridgeNode(Node):
         return True
 
     def _get_motion_total_duration(self, motion_key: str) -> float:
-        # --- ARREGLO MYPY --- Guardamos en variable local
         info_client = self.get_motion_info_client
-        
         if info_client is None:
             return 0.0
         if not self._wait_for_service(info_client, timeout_sec=2.0):
@@ -350,8 +357,6 @@ class TiagoBridgeNode(Node):
 
         request = GetMotionInfo.Request()
         request.motion_key = motion_key
-        
-        # Ahora usamos la variable local info_client
         future = info_client.call_async(request)
         
         if not self._wait_for_future(future, timeout_sec=2.0):
@@ -363,7 +368,8 @@ class TiagoBridgeNode(Node):
 
         times = getattr(result.motion, 'times_from_start', [])
         if times:
-            return float(times[-1])
+            # ¡ARREGLO DE LA BARRA! Le sumamos 2.5s de tiempo de planificación del robot
+            return float(times[-1]) + 2.5 
         return 0.0
     
     def get_available_actions(self) -> tuple[bool, Any]:
@@ -397,42 +403,96 @@ class TiagoBridgeNode(Node):
         return True, list(result.motion_keys)
 
     # --- ¡MÁGIA DE COMUNICACIÓN CON EL ROUTER! ---
-    def set_action_feedback_callback(self, callback: Callable[[bool, int, str], None]):
-        """Permite inyectar la función del router que mandará el WebSocket."""
+    def set_action_feedback_callback(self, callback: Callable[[bool, bool, int, str], None]):
         self._router_feedback_callback = callback
 
+    """
     def _play_motion_feedback_callback(self, feedback_msg: Any):
-        """Disparado por ROS 2 en 2º plano cuando hay un avance en la acción."""
+        Disparado por ROS 2 en 2º plano cuando hay un avance en la acción.
         try:
-            # 1. Avisamos al Router de que seguimos (done_exec=False)
+            # 🕵️ CHIVATO 2: Ver la respuesta cruda de ROS 2 mientras se mueve
+            self.logger.info(f"[DEBUG ROS2] Feedback crudo recibido: {feedback_msg}")
+
+            # 1. Calculamos el tiempo que llevamos
+            current_time = feedback_msg.feedback.current_time
+            elapsed = float(current_time.sec) + float(current_time.nanosec) * 1e-9
+            
+            # 2. Calculamos el porcentaje
+            progress = 0
+            if hasattr(self, 'current_motion_total_duration') and self.current_motion_total_duration > 0:
+                progress = int((elapsed / self.current_motion_total_duration) * 100)
+                progress = min(99, max(0, progress)) # Lo topamos al 99% para que el 100% sea al terminar
+
+            # 3. Avisamos al Router
             if self._router_feedback_callback:
-                self._router_feedback_callback(False, 0, "En progreso")
+                self._router_feedback_callback(False, progress, f"Progreso: {progress}%")
         except Exception as e:
-            self.logger.error(f"Error procesando el feedback de la acción: {e}")
+            self.logger.error(f"Error procesando el feedback de la acción: {e}") 
+    """
+
+    # ¡NUEVO! Nuestro propio reloj interno para forzar la barra de progreso (VERSIÓN LIMPIA)
+    def _progress_timer_callback(self):
+        try:
+            # Si ya no hay acción en curso, apagamos el cronómetro
+            if not self.current_goal_handle:
+                if self.action_progress_timer:
+                    self.action_progress_timer.cancel()
+                return
+
+            # Calculamos cuánto tiempo ha pasado desde que pulsamos el botón
+            elapsed = time.time() - self.action_start_time
+            total_dur = self.current_motion_total_duration
+
+            if total_dur > 0:
+                # Matemática exacta: (Tiempo transcurrido / Duración total) * 100
+                calc_prog = int((elapsed / total_dur) * 100)
+                progress = min(95, max(0, calc_prog)) # Lo topamos al 95% para que pegue el salto a 100% al terminar
+            else:
+                # Si falla la extracción de tiempo, avanzamos de forma lenta artificial
+                self._fake_progress += 5
+                progress = min(95, self._fake_progress)
+
+            # Enviamos el progreso al móvil
+            if self._router_feedback_callback:
+                self._router_feedback_callback(True, False, progress, f"Progreso: {progress}%")
+        except Exception as e:
+            self.logger.error(f"Error en timer de progreso: {e}")
 
     def _play_motion_result_callback(self, future: Any):
         """Disparado por ROS 2 cuando el movimiento termina o falla."""
+        if self.action_progress_timer:
+            self.action_progress_timer.cancel()
+        
         try:
             result = future.result().result
-            if result.success:
-                status = "Acción completada con éxito"
-                # Avisamos al Router de que ACABAMOS BIEN (done_exec=True)
+
+            # ¡NUEVA LÓGICA! Comprobamos primero nuestro banderín manual
+            if getattr(self, 'was_canceled_by_user', False):
+                self.was_canceled_by_user = False # Limpiamos el banderín
                 if self._router_feedback_callback:
-                    self._router_feedback_callback(True, 100, status)
+                    self._router_feedback_callback(True, True, 100, "Acción detenida por el usuario")
+                    
+            elif result.success:
+                if self._router_feedback_callback:
+                    self._router_feedback_callback(True, True, 100, "Acción completada con éxito")
             else:
-                status = f"Acción fallida: {result.error}"
-                # Avisamos al Router del ERROR
-                if self._router_feedback_callback:
-                    self._router_feedback_callback(False, 0, status)
+                error_msg = str(getattr(result, 'error', 'Error desconocido'))
+                if "cancel" in error_msg.lower():
+                    if self._router_feedback_callback:
+                        self._router_feedback_callback(True, True, 100, "Acción detenida por el usuario")
+                else:
+                    if self._router_feedback_callback:
+                        self._router_feedback_callback(False, True, 0, f"Acción fallida: {error_msg}")
         except Exception as e:
             self.logger.error(f"Excepción en el resultado de la acción: {e}")
             if self._router_feedback_callback:
-                self._router_feedback_callback(False, 0, "Excepción interna del robot")
+                self._router_feedback_callback(False, True, 0, "Excepción interna del robot")
         finally:
             with self._action_lock:
                 self.current_goal_handle = None
                 self.current_action_name = None
 
+    """
     def execute_action(self, action_type: str, target: str) -> tuple[bool, str]:
         if not self.is_connected:
             return False, "Robot no conectado."
@@ -447,6 +507,8 @@ class TiagoBridgeNode(Node):
         if act_client is None:
             return False, "Cliente de acción no inicializado."
 
+        self.current_motion_total_duration = self._get_motion_total_duration(target)
+        
         goal_msg = PlayMotion2.Goal()
         goal_msg.motion_name = target
         goal_msg.skip_planning = False
@@ -472,6 +534,54 @@ class TiagoBridgeNode(Node):
         result_future.add_done_callback(self._play_motion_result_callback)
 
         return True, "Acción aceptada. Ejecutando..."
+    """
+
+    def execute_action(self, action_type: str, target: str) -> tuple[bool, str]:
+        if not self.is_connected:
+            return False, "Robot no conectado."
+        if not self._discover_play_motion_endpoints():
+            return False, "Interfaz de acción no disponible."
+
+        act_client = self.play_motion_action_client
+        if act_client is None:
+            return False, "Cliente de acción no inicializado."
+
+        # ¡NUEVO! Inicializamos tiempos y arrancamos nuestro reloj
+        self._fake_progress = 0
+        self.current_motion_total_duration = self._get_motion_total_duration(target)
+        self.action_start_time = time.time()
+        
+        # Apagamos cronómetros fantasmas anteriores si los hubiera
+        if self.action_progress_timer:
+            self.action_progress_timer.cancel()
+        
+        # Le decimos a ROS 2 que llame a nuestro cronómetro cada 0.25 segundos
+        self.action_progress_timer = self.create_timer(0.25, self._progress_timer_callback)
+        
+        goal_msg = PlayMotion2.Goal()
+        goal_msg.motion_name = target
+        goal_msg.skip_planning = False
+
+        goal_future = act_client.send_goal_async(
+            goal_msg
+            # ¡Ya no necesitamos el feedback callback de ROS 2 porque usamos el nuestro!
+        )
+
+        if not self._wait_for_future(goal_future, timeout_sec=5.0):
+            return False, "Timeout enviando la orden al robot."
+
+        goal_handle = goal_future.result()
+        if not goal_handle.accepted:
+            return False, "El robot ha rechazado realizar el movimiento."
+
+        with self._action_lock:
+            self.current_goal_handle = goal_handle
+            self.current_action_name = target
+
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(self._play_motion_result_callback)
+
+        return True, "Acción aceptada. Ejecutando..."
     
     def stop_action(self, action_type: str, target: str) -> bool:
         with self._action_lock:
@@ -479,6 +589,10 @@ class TiagoBridgeNode(Node):
                 return False
             if target != self.current_action_name:
                 return False
+            
+            # ¡BANDERÍN! Levantamos la mano para que el callback sepa que fuimos nosotros
+            self.was_canceled_by_user = True 
+            
             cancel_future = self.current_goal_handle.cancel_goal_async()
 
         if not self._wait_for_future(cancel_future, timeout_sec=5.0):
@@ -492,7 +606,6 @@ class TiagoBridgeNode(Node):
             return True
 
         return False
-
     def get_teleop_topics(self) -> list[str]:
         topics_and_types = self.get_topic_names_and_types()
         safe_teleop_topics: list[str] = []

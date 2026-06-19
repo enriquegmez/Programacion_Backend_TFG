@@ -357,10 +357,9 @@ class MessageRouter:
                         await self._send_msg(fb_msg, send_callback)
 
                     # 3. Este es el callback que inyectaremos en el nodo de ROS 2
-                    def ros2_feedback_handler(done_exec: bool, progress: int, status: str):
-                        # Detectamos si es un error leyendo el string (falla, error, excepcion...)
-                        is_success = not any(err in status.lower() for err in ["fallida", "error", "excepción", "rechazada"])
-                        
+                    # 3. Este es el callback que inyectaremos en el nodo de ROS 2
+                    def ros2_feedback_handler(is_success: bool, done_exec: bool, progress: int, status: str):
+                        # ¡Ya no adivinamos leyendo el texto! Usamos las variables directas de ROS 2
                         fb_payload = ActionFeedbackPayload(
                             success=is_success,
                             code=StatusCode.OK if is_success else StatusCode.INTERNAL_ERROR,
@@ -372,7 +371,7 @@ class MessageRouter:
                         )
                         fb_msg = RobotMessage(header=resp_header, payload=fb_payload)
                         
-                        # ¡MAGIA! Ejecutamos el envío en el hilo principal de WebSockets, sin romper ROS 2
+                        # Ejecutamos el envío en el hilo principal de WebSockets
                         asyncio.run_coroutine_threadsafe(_sync_and_send_feedback(fb_msg), main_loop)
 
                     # 4. Inyectamos la función y lanzamos la acción

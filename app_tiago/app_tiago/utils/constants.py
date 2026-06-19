@@ -48,9 +48,9 @@ class Action:
 
 # --- TIPOS DE ACCIÓN (ActionReq payload 'type') ---
 class ActionType:
-    EXEC_ACTION = "exec_action"  # Para lanzar animaciones de play_motion
-    JOINT = "joint"              # (Opcional a futuro) Mover articulaciones
-    HOME = "home"                # (Opcional a futuro) Posición de reposo
+    EXEC_ACTION = "EXEC_ACTION"  # Para lanzar animaciones de play_motion
+    JOINT = "JOINT"              # (Opcional a futuro) Mover articulaciones
+    HOME = "HOME"                # (Opcional a futuro) Posición de reposo
 
 # --- RECURSOS (QueryReq resource_type) ---
 class Resource:

@@ -95,7 +95,7 @@ class MessageCodec:
                 resp_type = raw_payload.get("resp_type")
                 if resp_type == RespType.QUERY_RESP:
                     payload = QueryRespPayload(**raw_payload)
-                elif resp_type in [RespType.ACTION_FEEDBACK, RespType.STOP_ACTION_FEEDBACK]:
+                elif resp_type in [RespType.ACTION_FEEDBACK]:
                     payload = ActionFeedbackPayload(**raw_payload)
                 elif resp_type == RespType.STREAM_RESP:
                     payload = StreamRespPayload(**raw_payload)

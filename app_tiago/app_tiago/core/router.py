@@ -12,10 +12,15 @@ from typing import cast, Any
 from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType, Resource
 from app_tiago.protocol.models import (
     RobotMessage, MessageHeader, GenericRespPayload, 
-    ProtocolErrorPayload, EmptyPayload, AsyncNotifyPayload
+    ProtocolErrorPayload, EmptyPayload, AsyncNotifyPayload,
+    ActionFeedbackPayload
 )
 from app_tiago.protocol.json_translator import MessageCodec
-from app_tiago.protocol.models import CommandReqPayload, ControlModeReqPayload, ControlReqPayload, StreamReqPayload, StopStreamReqPayload, StreamRespPayload, QueryReqPayload, QueryRespPayload
+from app_tiago.protocol.models import (
+    CommandReqPayload, ActionReqPayload, ControlModeReqPayload, 
+    ControlReqPayload, StreamReqPayload, StopStreamReqPayload, 
+    StreamRespPayload, QueryReqPayload, QueryRespPayload, StopActionReqPayload
+)
 
 class MessageRouter:
 
@@ -259,6 +264,65 @@ class MessageRouter:
                     )
                 
                 # --- Lógica de selección de recurso ---
+                elif query_payload.resource_type == Resource.TELEOP:
+                    resp_data = self.ros_node.get_teleop_topics()
+                    resp_payload = QueryRespPayload(
+                        success=True, 
+                        code=StatusCode.OK, 
+                        resp_type=RespType.QUERY_RESP, 
+                        data=resp_data
+                    )
+                
+                elif query_payload.resource_type == Resource.CAMERAS:
+                    resp_data = self.ros_node.get_camera_topics()
+                    resp_payload = QueryRespPayload(
+                        success=True, 
+                        code=StatusCode.OK, 
+                        resp_type=RespType.QUERY_RESP, 
+                        data=resp_data
+                    )
+
+                elif query_payload.resource_type == Resource.ACTIONS:
+                    if self.ros_node:
+                        success, action_list_or_error = self.ros_node.get_available_actions()
+                        if success:
+                            resp_payload = QueryRespPayload(
+                                success=True,
+                                code=StatusCode.OK,
+                                resp_type=RespType.QUERY_RESP,
+                                data=action_list_or_error
+                            )
+                        else:
+                            resp_payload = QueryRespPayload(
+                                success=False,
+                                code=StatusCode.INTERNAL_ERROR,
+                                resp_type=RespType.QUERY_RESP,
+                                details=str(action_list_or_error)
+                            )
+                    else:
+                        resp_payload = QueryRespPayload(
+                            success=False,
+                            code=StatusCode.INTERNAL_ERROR,
+                            resp_type=RespType.QUERY_RESP,
+                            details="Backend ROS 2 no disponible."
+                        )
+                
+                elif query_payload.resource_type == Resource.TOPICS:
+                    resp_payload = QueryRespPayload(
+                        success=False, 
+                        code=StatusCode.NOT_ALLOWED, 
+                        resp_type=RespType.QUERY_RESP, 
+                        details="Consulta de topics aún no implementada."
+                    )
+                
+                elif query_payload.resource_type == Resource.SENSORS:
+                    resp_payload = QueryRespPayload(
+                        success=False, 
+                        code=StatusCode.NOT_ALLOWED, 
+                        resp_type=RespType.QUERY_RESP, 
+                        details="Consulta de sensores aún no implementada."
+                    )
+                
                 elif query_payload.resource_type == Resource.ROBOT_INFO:
                     # Esta llamada ahora recopila TODA la información, 
                     # incluyendo teleop_topics y camera_topics
@@ -278,6 +342,101 @@ class MessageRouter:
                         details=f"Recurso '{query_payload.resource_type}' desconocido o no soportado."
                     )
             
+            # ==========================================
+            # EL CORAZÓN DE LAS ACCIONES / MOVIMIENTOS
+            # ==========================================
+            case MsgType.ACTION_REQ:
+                action_payload = cast(ActionReqPayload, msg.payload)
+                if self.ros_node:
+                    # 1. Atrapamos el "Event Loop" del servidor para poder mandarle cosas desde ROS 2
+                    main_loop = asyncio.get_running_loop()
+
+                    # 2. Definimos una función envoltorio para sincronizar estados de forma segura
+                    async def _sync_and_send_feedback(fb_msg: RobotMessage):
+                        self.state_machine.commit_transition(msg, fb_msg)
+                        await self._send_msg(fb_msg, send_callback)
+
+                    # 3. Este es el callback que inyectaremos en el nodo de ROS 2
+                    def ros2_feedback_handler(done_exec: bool, progress: int, status: str):
+                        # Detectamos si es un error leyendo el string (falla, error, excepcion...)
+                        is_success = not any(err in status.lower() for err in ["fallida", "error", "excepción", "rechazada"])
+                        
+                        fb_payload = ActionFeedbackPayload(
+                            success=is_success,
+                            code=StatusCode.OK if is_success else StatusCode.INTERNAL_ERROR,
+                            resp_type=RespType.ACTION_FEEDBACK,
+                            details=status,
+                            status="completed" if (done_exec and is_success) else ("failed" if not is_success else "running"),
+                            progress=progress,
+                            done_exec=done_exec
+                        )
+                        fb_msg = RobotMessage(header=resp_header, payload=fb_payload)
+                        
+                        # ¡MAGIA! Ejecutamos el envío en el hilo principal de WebSockets, sin romper ROS 2
+                        asyncio.run_coroutine_threadsafe(_sync_and_send_feedback(fb_msg), main_loop)
+
+                    # 4. Inyectamos la función y lanzamos la acción
+                    self.ros_node.set_action_feedback_callback(ros2_feedback_handler)
+                    success, msg_str = self.ros_node.execute_action(action_payload.type, action_payload.target)
+                    
+                    # 5. La respuesta INICIAL (El "Vale, me pongo a ello")
+                    if success:
+                        resp_payload = ActionFeedbackPayload(
+                            success=True,
+                            code=StatusCode.OK,
+                            resp_type=RespType.ACTION_FEEDBACK,
+                            details=msg_str,
+                            status="accepted",
+                            progress=0,
+                            done_exec=False
+                        )
+                    else:
+                        resp_payload = ActionFeedbackPayload(
+                            success=False,
+                            code=StatusCode.NOT_ALLOWED,
+                            resp_type=RespType.ACTION_FEEDBACK,
+                            details=msg_str,
+                            status="rejected",
+                            progress=0,
+                            done_exec=True
+                        )
+                else:
+                    resp_payload = ActionFeedbackPayload(
+                        success=False,
+                        code=StatusCode.INTERNAL_ERROR,
+                        resp_type=RespType.ACTION_FEEDBACK,
+                        details="Backend ROS 2 no disponible.",
+                        status="error",
+                        done_exec=True
+                    )
+
+            case MsgType.STOP_ACTION_REQ:
+                # ¡CORRECCIÓN APLICADA! Usamos el nuevo StopActionReqPayload
+                stop_action_payload = cast(StopActionReqPayload, msg.payload)
+                if self.ros_node:
+                    stop_success = self.ros_node.stop_action(stop_action_payload.type, stop_action_payload.target)
+                    if stop_success:
+                        resp_payload = GenericRespPayload(
+                            success=True, 
+                            code=StatusCode.OK, 
+                            resp_type=RespType.STOP_ACTION_FEEDBACK, 
+                            details=f"Acción '{stop_action_payload.type}' detenida correctamente.",
+                        )
+                    else:
+                        resp_payload = GenericRespPayload(
+                            success=False, 
+                            code=StatusCode.INTERNAL_ERROR, 
+                            resp_type=RespType.STOP_ACTION_FEEDBACK, 
+                            details=f"Acción '{stop_action_payload.type}' no se pudo detener.",
+                        )  
+                else:
+                    resp_payload = GenericRespPayload(
+                            success=False, 
+                            code=StatusCode.INTERNAL_ERROR, 
+                            resp_type=RespType.STOP_ACTION_FEEDBACK, 
+                            details=f"Backend ROS 2 no disponible, no se pudo detener la acción '{stop_action_payload.type}'.",
+                        )
+
             case MsgType.CONTROL_MODE_REQ:
                 # SOLUCIÓN: Usamos cast para que Mypy sepa qué Payload es
                 ctrl_mode_payload = cast(ControlModeReqPayload, msg.payload)
@@ -427,8 +586,8 @@ class MessageRouter:
             # Si el stream no funciona, el móvil lo detectará al no recibir datos y podrá mostrar un mensaje genérico de 
             # "No se puede mostrar el vídeo".
             case MsgType.STOP_STREAM_REQ:
-                stop_payload = cast(StopStreamReqPayload, msg.payload)
-                self.logger.info(f"Petición de parada de stream para el recurso: {stop_payload.resource}")
+                stop_stream_payload = cast(StopStreamReqPayload, msg.payload)
+                self.logger.info(f"Petición de parada de stream para el recurso: {stop_stream_payload.resource}")
                 # Como usamos Lazy Subscriptions, no hay que matar procesos. Con responder OK basta.
                 resp_payload = GenericRespPayload(
                     success=True, code=StatusCode.OK, resp_type=RespType.STOP_STREAM_RESP

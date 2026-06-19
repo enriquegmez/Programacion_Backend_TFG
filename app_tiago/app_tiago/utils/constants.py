@@ -46,6 +46,12 @@ class Action:
     GET_HISTORY = "get_history"
     SSH_CMD = "ssh"
 
+# --- TIPOS DE ACCIÓN (ActionReq payload 'type') ---
+class ActionType:
+    EXEC_ACTION = "exec_action"  # Para lanzar animaciones de play_motion
+    JOINT = "joint"              # (Opcional a futuro) Mover articulaciones
+    HOME = "home"                # (Opcional a futuro) Posición de reposo
+
 # --- RECURSOS (QueryReq resource_type) ---
 class Resource:
     ROBOT_INFO = "ROBOT_INFO"
@@ -95,6 +101,11 @@ class RosTopics:
     CMD_VEL = "/mobile_base_controller/cmd_vel" # Tópico estándar de Tiago
     BATTERY = "/battery_status"
 
+# --- SERVIDORES DE ACCIÓN DE ROS 2 ---
+class RosActions:
+    # Dependiendo de tu versión de Tiago, puede ser "/play_motion" o "/play_motion2"
+    PLAY_MOTION = "/play_motion"
+
 # --- LÍMITES FÍSICOS DEL ROBOT (Seguridad / Validator) ---
 class RobotLimits:
     MAX_LINEAR_VEL = 2.0    # Ajustado al JSON Schema (v: minimum -2.0, maximum 2.0)
@@ -140,7 +151,13 @@ class RobotInfoKeys:
     HAS_GRIPPER = "has_gripper"
     HAS_ODOMETRY = "has_odometry"
     HAS_IMU = "has_imu"
-    
+    HAS_FT_SENSOR = "has_ft_sensor"
+    HAS_DIAGNOSTICS = "has_diagnostics"
+    HAS_CHARGE_SENSOR = "has_charge_sensor"
+    CAMERA_TOPICS = "camera_topics"
+    TELEOP_TOPICS = "teleop_topics"
+    HAS_PLAY_MOTION = "has_play_motion"
+
     # --- CONFIGURACIÓN DEL AUTO-DESCUBRIMIENTO (Heurísticas) ---
 class DiscoveryConfig:
     # Palabras clave para inferir hardware

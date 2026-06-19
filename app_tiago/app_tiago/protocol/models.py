@@ -35,6 +35,12 @@ class ActionReqPayload:
     type: str          # JOINT, HOME, EXEC_ACTION
     target: str
 
+# --- ¡NUEVO! ---
+@dataclass
+class StopActionReqPayload:
+    type: str          # Debe coincidir con la acción actual (ej. EXEC_ACTION)
+    target: str        # Debe coincidir con el target actual (ej. saludar)
+
 @dataclass
 class ControlModeReqPayload:
     event: str         # START, STOP
@@ -127,6 +133,7 @@ class RobotMessage:
         CommandReqPayload, 
         QueryReqPayload,
         ActionReqPayload,
+        StopActionReqPayload,
         ControlModeReqPayload, 
         ControlReqPayload, 
         StreamReqPayload,

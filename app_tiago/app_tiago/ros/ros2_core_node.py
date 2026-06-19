@@ -4,9 +4,9 @@ Nodo independiente de ROS 2.
 Escucha comandos crudos de la app web, filtra velocidades peligrosas y publica al robot.
 """
 
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import Twist
+import rclpy # type: ignore[import]
+from rclpy.node import Node # type: ignore[import]
+from geometry_msgs.msg import Twist # type: ignore[import]
 import logging
 
 class SafetyFilterNode(Node):

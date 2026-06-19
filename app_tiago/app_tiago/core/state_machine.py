@@ -6,13 +6,15 @@ las consolida solo si hay éxito (commit_transition).
 """
 
 import logging
-from typing import cast # <-- ¡NUEVO! Importamos cast
+from typing import cast, Optional # <-- ¡NUEVO! Importamos cast y Optional
 from app_tiago.utils.constants import (
     MonitorState, MsgType, Action, ControlEvent, 
     ServerState, MovementState, StatusCode
 )
 # <-- ¡NUEVO! Importamos los payloads específicos que vamos a leer
-from app_tiago.protocol.models import RobotMessage, CommandReqPayload, ControlModeReqPayload
+from app_tiago.protocol.models import (
+    RobotMessage, CommandReqPayload, ActionReqPayload, 
+    ControlModeReqPayload, StopActionReqPayload)
 
 class ProtocolStateMachine:
     def __init__(self):
@@ -20,6 +22,7 @@ class ProtocolStateMachine:
         self.global_state = ServerState.IDLE
         self.movement_state = MovementState.IDLE
         self.monitor_state = MonitorState.IDLE
+        self.current_action: Optional[ActionReqPayload] = None
 
     def client_connected(self):
         """Llamado cuando un WebSocket se ancla al servidor."""
@@ -32,6 +35,7 @@ class ProtocolStateMachine:
         self.global_state = ServerState.IDLE
         self.movement_state = MovementState.IDLE
         self.monitor_state = MonitorState.IDLE
+        self.current_action = None
     
     def can_transition(self, msg: RobotMessage) -> tuple[bool, int, str]:
         """
@@ -74,8 +78,9 @@ class ProtocolStateMachine:
                 return True, StatusCode.OK, ""
 
             # --- SUBMÁQUINA CONCURRENTE A: MOVIMIENTO ---
-            elif msg_type in [MsgType.CONTROL_MODE_REQ, MsgType.CONTROL_REQ]:
-                # SOLUCIÓN: Extraemos el evento de forma segura solo si es un CONTROL_MODE_REQ
+            # Agrupa todos los mensajes de movimiento: ACTION_REQ, STOP_ACTION_REQ, CONTROL_MODE_REQ, CONTROL_REQ
+            elif msg_type in [MsgType.ACTION_REQ, MsgType.STOP_ACTION_REQ, MsgType.CONTROL_MODE_REQ, MsgType.CONTROL_REQ]:
+                # Extraemos el evento de forma segura solo si es un CONTROL_MODE_REQ
                 event = None
                 if msg_type == MsgType.CONTROL_MODE_REQ:
                     cm_payload = cast(ControlModeReqPayload, msg.payload)
@@ -85,6 +90,10 @@ class ProtocolStateMachine:
                 if self.movement_state == MovementState.IDLE:
                     if msg_type == MsgType.CONTROL_MODE_REQ and event == ControlEvent.START:
                         return True, StatusCode.OK, ""
+                    elif msg_type == MsgType.ACTION_REQ:
+                        if self.current_action is not None:
+                            return False, StatusCode.NOT_ALLOWED, "Error de estado: hay una acción en memoria pero el estado es IDLE."
+                        return True, StatusCode.OK, ""
                     return False, StatusCode.NOT_ALLOWED, "Comando de movimiento denegado. El estado es IDLE."
                 
                 # Estado actual: RECIBIENDO_INFO
@@ -93,7 +102,25 @@ class ProtocolStateMachine:
                         return True, StatusCode.OK, ""
                     elif msg_type == MsgType.CONTROL_MODE_REQ and event == ControlEvent.STOP:
                         return True, StatusCode.OK, ""
+                    elif msg_type == MsgType.ACTION_REQ:
+                        return False, StatusCode.NOT_ALLOWED, "Comando de acción denegado. El servidor está en modo de teleoperación (joystick)."
                     return False, StatusCode.NOT_ALLOWED, "Comando de movimiento denegado. El estado es RECIBIENDO_INFO."
+                
+               # Estado actual: EJECUTANDO_ACCION
+                elif self.movement_state == MovementState.EJECUTANDO_ACCION:
+                    
+                    if msg_type == MsgType.STOP_ACTION_REQ:
+                        action_payload = cast(StopActionReqPayload, msg.payload)
+                        if self.current_action is None:
+                            return False, StatusCode.NOT_ALLOWED, "No se puede detener la acción: no hay ninguna accion en curso."
+                        if (action_payload.type != self.current_action.type or
+                                action_payload.target != self.current_action.target):
+                            return False, StatusCode.NOT_ALLOWED, "La accion pedida no coincide con la acción en curso."
+                        return True, StatusCode.OK, ""
+                    
+                    elif msg_type == MsgType.ACTION_REQ:
+                        return False, StatusCode.NOT_ALLOWED, "Comando de acción denegado. Ya hay una acción en ejecución."
+                    return False, StatusCode.NOT_ALLOWED, "Comando denegado. Se está ejecutando una acción."
 
             # --- SUBMÁQUINA CONCURRENTE B: MONITORIZACIÓN (VÍDEO/SENSORES) ---
             elif self.monitor_state == MonitorState.IDLE:
@@ -156,7 +183,35 @@ class ProtocolStateMachine:
             if not success:
                 self.movement_state = MovementState.IDLE
                 self.logger.warning("Respuesta de Error en CONTROL_REQ. Vuelta a IDLE de emergencia.")
-        
+
+        elif req_type == MsgType.ACTION_REQ:
+            if success:
+                action_payload = cast(ActionReqPayload, req_msg.payload)
+                self.current_action = action_payload
+                done_exec = getattr(resp_msg.payload, 'done_exec', False)
+                
+                if done_exec:
+                    self.movement_state = MovementState.IDLE
+                    self.current_action = None
+                    self.logger.info("Transición Movimiento -> IDLE (Acción terminada)")
+                else:
+                    # Solo transicionar si aún no estamos en EJECUTANDO_ACCION
+                    if self.movement_state != MovementState.EJECUTANDO_ACCION:
+                        self.movement_state = MovementState.EJECUTANDO_ACCION
+                        self.logger.info("Transición Movimiento -> EJECUTANDO_ACCION")
+            else:
+                # ¡NUEVO! Regla de fallo: Si hay error (success=False), abortamos y volvemos a IDLE
+                if self.movement_state == MovementState.EJECUTANDO_ACCION:
+                    self.movement_state = MovementState.IDLE
+                    self.current_action = None
+                    self.logger.warning("Error durante la ejecución de la acción. Vuelta a IDLE de emergencia.")
+
+        elif req_type == MsgType.STOP_ACTION_REQ:
+            if success:
+                self.movement_state = MovementState.IDLE
+                self.current_action = None
+                self.logger.info("Transición Movimiento -> IDLE")
+
         # --- MANEJO DE QUERIES ---
         elif req_type == MsgType.QUERY_REQ:
             # No hay cambios de estado en la máquina, solo se responde.
@@ -182,3 +237,4 @@ class ProtocolStateMachine:
         self.global_state = ServerState.CONEXION_BACKEND
         self.movement_state = MovementState.IDLE
         self.monitor_state = MonitorState.IDLE
+        self.current_action = None

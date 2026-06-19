@@ -219,7 +219,7 @@
           },
           {
             "description": "Capa específica para FEEDBACK DE ACCIONES",
-            "if": { "properties": { "resp_type": { "enum": ["ACTION_FEEDBACK", "STOP_ACTION_FEEDBACK"] }, "success": { "const": true } } },
+            "if": { "properties": { "resp_type": { "enum": ["ACTION_FEEDBACK"] }, "success": { "const": true } } },
             "then": {
               "required": ["done_exec", "progress"],
               "properties": {

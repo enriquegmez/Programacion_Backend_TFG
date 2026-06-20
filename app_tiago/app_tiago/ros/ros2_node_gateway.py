@@ -192,8 +192,33 @@ class TiagoBridgeNode(Node):
 
     def disconnect(self):
         if self.is_connected:
-            self.logger.info("Desconectando del Tiago. Aplicando freno de emergencia.")
-            self.stop_robot()
+            self.logger.info("Desconectando del Tiago. Aplicando freno de emergencia global.")
+            
+            # ==========================================
+            # ¡NUEVO! CANCELACIÓN SEGURA DE PLAYMOTION
+            # Si hay un movimiento ejecutándose, lo matamos.
+            # ==========================================
+            with self._action_lock:
+                if getattr(self, 'current_goal_handle', None) is not None:
+                    self.logger.info("Cancelando movimiento de PlayMotion en curso por desconexión...")
+                    try:
+                        # Levantamos el banderín por si el callback residual salta
+                        self.was_canceled_by_user = True 
+                        # Mandamos la orden de cancelar a ROS 2
+                        self.current_goal_handle.cancel_goal_async()
+                    except Exception as e:
+                        self.logger.warning(f"Aviso al cancelar acción durante desconexión: {e}")
+                    finally:
+                        self.current_goal_handle = None
+                        self.current_action_name = None
+
+            # Apagamos también nuestro cronómetro interno por si acaso
+            if hasattr(self, 'action_progress_timer') and self.action_progress_timer:
+                self.action_progress_timer.cancel()
+            
+            # El freno de las ruedas que ya tenías
+            self.stop_robot() 
+            
             self.is_connected = False
             self.is_control_active = False
 

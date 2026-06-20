@@ -48,7 +48,7 @@
           "payload": {
             "required": ["resource_type"],
             "properties": {
-              "resource_type": { "enum": ["TOPICS", "SENSORS", "ACTIONS", "ROBOT_INFO"] }
+              "resource_type": { "enum": ["TOPICS", "SERVICES", "ACTIONS", "MOVEMENTS","ROBOT_INFO"] }
             }
           }
         }
@@ -95,7 +95,8 @@
                 "properties": {
                   "v": { "type": "number", "minimum": -2.0, "maximum": 2.0 },
                   "w": { "type": "number", "minimum": -1.5, "maximum": 1.5 },
-                  "joints": { "type": "array", "items": { "type": "number" } }
+                  "joint_name": {"type": "string"}, 
+                  "joint_value": {"type": "number"}  
                 }
               }
             }

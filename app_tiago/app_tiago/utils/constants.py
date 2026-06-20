@@ -58,8 +58,9 @@ class Resource:
     TELEOP = "TELEOP"
     CAMERAS = "CAMERAS"
     TOPICS = "TOPICS"
-    SENSORS = "SENSORS"
+    SERVICES = "SERVICES"
     ACTIONS = "ACTIONS"
+    MOVEMENTS = "MOVEMENTS"  # (Opcional a futuro) Para obtener lista de movimientos predefinidos
 
 # --- EVENTOS Y TIPOS DE CONTROL (ControlModeReq payload) ---
 class ControlEvent:
@@ -157,6 +158,8 @@ class RobotInfoKeys:
     CAMERA_TOPICS = "camera_topics"
     TELEOP_TOPICS = "teleop_topics"
     HAS_PLAY_MOTION = "has_play_motion"
+    # ¡NUEVO! Aquí mandaremos la lista de motores controlables y sus límites
+    CONTROLABLE_JOINTS = "controlableJoints"
 
     # --- CONFIGURACIÓN DEL AUTO-DESCUBRIMIENTO (Heurísticas) ---
 class DiscoveryConfig:

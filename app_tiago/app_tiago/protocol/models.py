@@ -51,7 +51,8 @@ class ControlModeReqPayload:
 class ControlData:
     v: Optional[float] = 0.0
     w: Optional[float] = 0.0
-    joints: List[float] = field(default_factory=list)
+    joint_name: Optional[str] = None
+    joint_value: Optional[float] = None
 
 @dataclass
 class ControlReqPayload:

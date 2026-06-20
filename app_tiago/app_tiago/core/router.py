@@ -264,25 +264,26 @@ class MessageRouter:
                     )
                 
                 # --- Lógica de selección de recurso ---
-                elif query_payload.resource_type == Resource.TELEOP:
-                    resp_data = self.ros_node.get_teleop_topics()
-                    resp_payload = QueryRespPayload(
-                        success=True, 
-                        code=StatusCode.OK, 
-                        resp_type=RespType.QUERY_RESP, 
-                        data=resp_data
-                    )
                 
-                elif query_payload.resource_type == Resource.CAMERAS:
-                    resp_data = self.ros_node.get_camera_topics()
-                    resp_payload = QueryRespPayload(
-                        success=True, 
-                        code=StatusCode.OK, 
-                        resp_type=RespType.QUERY_RESP, 
-                        data=resp_data
-                    )
-
-                elif query_payload.resource_type == Resource.ACTIONS:
+               # elif query_payload.resource_type == Resource.TELEOP:
+                  #  resp_data = self.ros_node.get_teleop_topics()
+                 #   resp_payload = QueryRespPayload(
+                    #    success=True, 
+                   #     code=StatusCode.OK, 
+                  #      resp_type=RespType.QUERY_RESP, 
+                 #       data=resp_data
+                #    )
+                
+               # elif query_payload.resource_type == Resource.CAMERAS:
+                 #   resp_data = self.ros_node.get_camera_topics()
+                 #   resp_payload = QueryRespPayload(
+                #        success=True, 
+               #         code=StatusCode.OK, 
+              #          resp_type=RespType.QUERY_RESP, 
+             #           data=resp_data
+            #        )
+                
+                elif query_payload.resource_type == Resource.MOVEMENTS:
                     if self.ros_node:
                         success, action_list_or_error = self.ros_node.get_available_actions()
                         if success:
@@ -308,20 +309,61 @@ class MessageRouter:
                         )
                 
                 elif query_payload.resource_type == Resource.TOPICS:
-                    resp_payload = QueryRespPayload(
-                        success=False, 
-                        code=StatusCode.NOT_ALLOWED, 
-                        resp_type=RespType.QUERY_RESP, 
-                        details="Consulta de topics aún no implementada."
-                    )
+                    if self.ros_node:
+                        data = self.ros_node.get_all_topics()
+                        if data:  # Si el diccionario tiene elementos
+                            resp_payload = QueryRespPayload(
+                                success=True, code=StatusCode.OK, 
+                                resp_type=RespType.QUERY_RESP, data=data
+                            )
+                        else:     # Si está vacío
+                            resp_payload = QueryRespPayload(
+                                success=False, code=StatusCode.NOT_FOUND, 
+                                resp_type=RespType.QUERY_RESP, details="No se encontraron topics en la red de ROS 2."
+                            )
+                    else:
+                        resp_payload = QueryRespPayload(
+                            success=False, code=StatusCode.INTERNAL_ERROR, 
+                            resp_type=RespType.QUERY_RESP, details="Backend ROS 2 no disponible."
+                        )
                 
-                elif query_payload.resource_type == Resource.SENSORS:
-                    resp_payload = QueryRespPayload(
-                        success=False, 
-                        code=StatusCode.NOT_ALLOWED, 
-                        resp_type=RespType.QUERY_RESP, 
-                        details="Consulta de sensores aún no implementada."
-                    )
+                elif query_payload.resource_type == Resource.SERVICES:
+                    if self.ros_node:
+                        data = self.ros_node.get_all_services()
+                        if data:
+                            resp_payload = QueryRespPayload(
+                                success=True, code=StatusCode.OK, 
+                                resp_type=RespType.QUERY_RESP, data=data
+                            )
+                        else:
+                            resp_payload = QueryRespPayload(
+                                success=False, code=StatusCode.NOT_FOUND, 
+                                resp_type=RespType.QUERY_RESP, details="No se encontraron servicios en la red de ROS 2."
+                            )
+                    else:
+                        resp_payload = QueryRespPayload(
+                            success=False, code=StatusCode.INTERNAL_ERROR, 
+                            resp_type=RespType.QUERY_RESP, details="Backend ROS 2 no disponible."
+                        )
+
+                elif query_payload.resource_type == Resource.ACTIONS:
+                    if self.ros_node:
+                        data = self.ros_node.get_all_actions()
+                        if data:
+                            resp_payload = QueryRespPayload(
+                                success=True, code=StatusCode.OK, 
+                                resp_type=RespType.QUERY_RESP, data=data
+                            )
+                        else:
+                            resp_payload = QueryRespPayload(
+                                success=False, code=StatusCode.NOT_FOUND, 
+                                resp_type=RespType.QUERY_RESP, details="No se encontraron acciones (Action Servers) en la red de ROS 2."
+                            )
+                    else:
+                        resp_payload = QueryRespPayload(
+                            success=False, code=StatusCode.INTERNAL_ERROR, 
+                            resp_type=RespType.QUERY_RESP, details="Backend ROS 2 no disponible."
+                        )
                 
                 elif query_payload.resource_type == Resource.ROBOT_INFO:
                     # Esta llamada ahora recopila TODA la información, 
@@ -481,50 +523,78 @@ class MessageRouter:
                 v = ctrl_payload.data.v
                 w = ctrl_payload.data.w
                 
+                # Leemos los campos opcionales para las articulaciones
+                joint_name = ctrl_payload.data.joint_name
+                joint_value = ctrl_payload.data.joint_value
+                
                 current_time = time.time()
                 publish_success = True
-
-                # 🛡️ PROTECCIÓN POR INTERVALO DE LLEGADA (Arrival Watchdog) 🛡️
-                # Calculamos cuánto tiempo ha pasado desde el ÚLTIMO mensaje de control que recibimos
-                if self.last_control_req_arrival > 0:
-                    time_since_last_packet = current_time - self.last_control_req_arrival
-                else:
-                    # Es el primer paquete de la sesión, no hay intervalo que medir
-                    time_since_last_packet = 0.0
-
-                # 1. Si el "hueco" de silencio entre paquetes es > 0.5s, hay un problema de red
-                if time_since_last_packet > 0.6:
-                    self.logger.warning(f"⚠️ HUECO DE RED DETECTADO: {time_since_last_packet:.2f}s sin recibir órdenes. Frenado de seguridad.")
-                    publish_success = False
-                    if self.ros_node:
-                        self.ros_node.stop_robot()
                 
-                # 2. Si el intervalo es correcto, intentamos publicar
+                # ¡NUEVO! Detectamos si estamos controlando ruedas o cuerpo
+                is_teleop = not joint_name 
+
+                # ==========================================
+                # 1. LÓGICA DE RUEDAS (Con Watchdog Estricto)
+                # ==========================================
+                if is_teleop:
+                    if self.last_control_req_arrival > 0:
+                        time_since_last_packet = current_time - self.last_control_req_arrival
+                    else:
+                        time_since_last_packet = 0.0
+
+                    # Si el "hueco" de silencio es > 0.6s, hay un problema de red
+                    if time_since_last_packet > 0.6:
+                        self.logger.warning(f"⚠️ HUECO DE RED (Ruedas): {time_since_last_packet:.2f}s sin recibir órdenes. Frenado.")
+                        publish_success = False
+                        if self.ros_node:
+                            self.ros_node.stop_robot()
+                    else:
+                        if self.ros_node:
+                            try:
+                                publish_success = self.ros_node.publish_velocity(v, w)
+                            except Exception as e:
+                                self.logger.error(f"Fallo crítico enviando velocidad: {e}")
+                                publish_success = False
+                        else:
+                            publish_success = False
+
+                    # Actualizamos el marcador de tiempo del joystick
+                    self.last_control_req_arrival = current_time
+
+                # ==========================================
+                # 2. LÓGICA DE ARTICULACIONES (Sin Watchdog Estricto)
+                # ==========================================
                 else:
                     if self.ros_node:
                         try:
-                            publish_success = self.ros_node.publish_velocity(v, w)
+                            # Aquí no hay peligro de choque infinito, el motor va a una posición exacta y para
+                            publish_success = self.ros_node.publish_joint_position(joint_name, joint_value)
                         except Exception as e:
-                            self.logger.error(f"Fallo crítico enviando velocidad: {e}")
+                            self.logger.error(f"Fallo crítico enviando orden de articulación: {e}")
                             publish_success = False
                     else:
                         publish_success = False
+                    
+                    # Para mantener el ritmo de respuesta al móvil sin falsear el timer de las ruedas
+                    # actualizamos también el reloj para que no salten errores al volver al Joystick
+                    self.last_control_req_arrival = current_time
 
-                # ACTUALIZAMOS el marcador de tiempo para el próximo paquete
-                self.last_control_req_arrival = current_time
-
+                # ==========================================
                 # 3. GESTIÓN DE RESPUESTAS AL MÓVIL
-                # Avisamos inmediatamente si hubo error de LAG o si toca enviar el ACK rutinario (cada 0.5s)
+                # ==========================================
                 if not publish_success or (current_time - self.last_control_resp_time >= self.CONTROL_RESP_INTERVAL):
                     self.last_control_resp_time = current_time
                     
                     if not publish_success:
-                        # Si falló por lag, mandamos detalles específicos para que la UI lo pinte
+                        error_detail = (
+                            f"Frenado de seguridad: Red inestable (Salto de {time_since_last_packet:.2f}s)." 
+                            if is_teleop else "Error enviando posición a la articulación."
+                        )
                         resp_payload = GenericRespPayload(
                             success=False, 
                             code=StatusCode.INTERNAL_ERROR, 
                             resp_type=RespType.CONTROL_RESP, 
-                            details=f"Frenado de seguridad: Red inestable (Salto de {time_since_last_packet:.2f}s)."
+                            details=error_detail
                         )
                     else:
                         resp_payload = GenericRespPayload(

@@ -171,13 +171,14 @@ class ProtocolStateMachine:
             # SOLUCIÓN: Cast para acceder a 'event'
             cm_req_payload = cast(ControlModeReqPayload, req_msg.payload)
             event = cm_req_payload.event
+            mode_type = cm_req_payload.type # ¡NUEVO! Extraemos si es TELEOP o JOINT
             if success:
                 if event == ControlEvent.START:
                     self.movement_state = MovementState.RECIBIENDO_INFO
-                    self.logger.info("Transición Movimiento -> RECIBIENDO_INFO")
+                    self.logger.info(f"Transición Movimiento -> RECIBIENDO_INFO (Modo: {mode_type})")
                 elif event == ControlEvent.STOP:
                     self.movement_state = MovementState.IDLE
-                    self.logger.info("Transición Movimiento -> IDLE")
+                    self.logger.info(f"Transición Movimiento -> IDLE (Fin de {mode_type})")
 
         elif req_type == MsgType.CONTROL_REQ:
             if not success:

@@ -10,7 +10,11 @@ import rclpy # type: ignore[import]
 import time
 import os
 import socket
+import xml.etree.ElementTree as ET # ¡NUEVO! Para leer el URDF (XML)
 from rclpy.timer import Timer
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy # ¡NUEVO! Para leer topics "latched"
+from std_msgs.msg import String # ¡NUEVO! Para el topic /robot_description
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint # ¡NUEVO! Para mover motores
 from typing import Any, Optional, Callable # <-- ¡NUEVO! Importamos Callable
 from rclpy.node import Node  # type: ignore[import]
 from geometry_msgs.msg import Twist # type: ignore[import]
@@ -68,6 +72,17 @@ class TiagoBridgeNode(Node):
         self.action_start_time: float = 0.0
         self.current_motion_total_duration: float = 0.0
         self._fake_progress: int = 0
+
+        # ==========================================
+        # ¡NUEVO! LÓGICA DE ARTICULACIONES Y URDF
+        # ==========================================
+        self.joint_limits: list[dict[str, Any]] = []
+        self.joint_publishers: dict[str, Any] = {}
+        
+        # Nos suscribimos al URDF. Usamos TRANSIENT_LOCAL porque este topic a veces
+        # solo se publica una vez al arrancar el robot y se queda "guardado" en la red.
+        qos_urdf = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.urdf_sub = self.create_subscription(String, '/robot_description', self._urdf_callback, qos_urdf)
 
         self.discovery_timer = self.create_timer(2.0, self._discovery_timer_callback)
         self.logger.info("Puente ROS 2 iniciado. Publicando raw en: /web_teleop/cmd_vel_raw")
@@ -163,6 +178,34 @@ class TiagoBridgeNode(Node):
 
     def _estop_callback(self, msg: Bool):
         self.latest_estop_active = msg.data
+
+    # ==========================================
+    # ¡NUEVO! LECTURA DE URDF Y PUERTA RÁPIDA
+    # ==========================================
+    def _urdf_callback(self, msg: String):
+        """Lee el XML del robot y extrae los límites de los motores reales."""
+        if self.joint_limits: # Si ya los hemos leído, no hacemos nada más
+            return
+        try:
+            root = ET.fromstring(msg.data)
+            limits = []
+            for joint in root.findall('joint'):
+                j_type = joint.get('type')
+                j_name = joint.get('name')
+                # Solo queremos articulaciones que se muevan con límites
+                if j_type in ['revolute', 'prismatic'] and j_name:
+                    limit_tag = joint.find('limit')
+                    if limit_tag is not None:
+                        try:
+                            lower = float(limit_tag.get('lower', 0.0))
+                            upper = float(limit_tag.get('upper', 0.0))
+                            limits.append({"name": j_name, "min": lower, "max": upper})
+                        except ValueError:
+                            pass
+            self.joint_limits = limits
+            self.logger.info(f"¡URDF escaneado con éxito! {len(limits)} motores detectados.")
+        except Exception as e:
+            self.logger.error(f"Error parseando el URDF del robot: {e}")
 
     def connect(self) -> int:
         nodos_activos = self.get_node_names()
@@ -315,6 +358,57 @@ class TiagoBridgeNode(Node):
                 self.vel_publisher.publish(msg)
         except Exception as e:
             self.logger.debug(f"Freno omitido: {e}")
+
+    #FUNCION PARA MOVER ARTICULACIONES EN TIEMPO REAL (BARRA DESLIZADORA)
+    def publish_joint_position(self, joint_name: str, value: float) -> bool:
+        """La 'Puerta Rápida' para seguir la barra deslizadora del móvil en vivo."""
+        if not self.is_connected or not self.is_control_active:
+            return False
+
+        # ==========================================
+        # ¡NUEVO! SEGURIDAD: Recortar (Clamp) el valor a los límites URDF
+        # ==========================================
+        if self.joint_limits:
+            for limit in self.joint_limits:
+                if limit["name"] == joint_name:
+                    min_val = limit["min"]
+                    max_val = limit["max"]
+                    if value < min_val:
+                        value = min_val
+                    elif value > max_val:
+                        value = max_val
+                    break
+
+        # 1. Averiguamos a qué parte del cuerpo pertenece este motor
+        controller = None
+        if "head" in joint_name:
+            controller = "head_controller"
+        elif "torso" in joint_name:
+            controller = "torso_controller"
+        elif "arm" in joint_name:
+            controller = "arm_controller"
+        elif "gripper" in joint_name:
+            controller = "gripper_controller"
+        else:
+            self.logger.warning(f"No sé a qué controlador enviar: {joint_name}")
+            return False
+
+        topic = f"/{controller}/joint_trajectory"
+
+        if topic not in self.joint_publishers:
+            self.joint_publishers[topic] = self.create_publisher(JointTrajectory, topic, 10)
+
+        msg = JointTrajectory()
+        msg.joint_names = [joint_name]
+        
+        point = JointTrajectoryPoint()
+        point.positions = [float(value)]
+        point.time_from_start.sec = 0
+        point.time_from_start.nanosec = 200000000 # 200 milisegundos
+        
+        msg.points = [point]
+        self.joint_publishers[topic].publish(msg)
+        return True
 
     # ==========================================
     # LÓGICA DE ACTIONS Y PLAY MOTION
@@ -812,8 +906,29 @@ class TiagoBridgeNode(Node):
                 RobotInfoKeys.HAS_MOVEIT: has_moveit,
                 RobotInfoKeys.HAS_FT_SENSOR: has_ft_sensor,
                 RobotInfoKeys.HAS_PLAY_MOTION: has_play_motion,
+                RobotInfoKeys.CONTROLABLE_JOINTS: self.joint_limits #QUE ARTICULACIONES PUEDO MOVER Y SUS LIMITES
             }
         }
+    
+    # ==========================================
+    # FUNCIONES DE INSPECCIÓN DE RED (ESTILO ROS2CLI)
+    # ==========================================
+    def get_all_topics(self) -> dict[str, list[str]]:
+        """Devuelve un diccionario { '/topic_name': ['type1', 'type2'] }"""
+        return {name: types for name, types in self.get_topic_names_and_types()}
+
+    def get_all_services(self) -> dict[str, list[str]]:
+        """Devuelve un diccionario { '/service_name': ['type1', 'type2'] }"""
+        return {name: types for name, types in self.get_service_names_and_types()}
+
+    def get_all_actions(self) -> dict[str, list[str]]:
+        """Devuelve un diccionario { '/action_name': ['type1', 'type2'] }"""
+        try:
+            from rclpy.action import get_action_names_and_types
+            return {name: types for name, types in get_action_names_and_types(self)}
+        except Exception as e:
+            self.logger.warning(f"Error obteniendo la lista de actions: {e}")
+            return {}
 
 
 class Ros2Manager:
@@ -966,3 +1081,27 @@ class Ros2Manager:
         if self._is_running and self.gateway_node:
             return self.gateway_node.stop_action(action_type, target)
         return False
+    
+    def publish_joint_position(self, joint_name: str, value: float) -> bool:
+        """Puente para enviar posiciones a las articulaciones (Puerta Rápida)."""
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.publish_joint_position(joint_name, value)
+        return False
+    
+    # ==========================================
+    # INSPECCIÓN DE RED
+    # ==========================================
+    def get_all_topics(self) -> dict:
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.get_all_topics()
+        return {}
+
+    def get_all_services(self) -> dict:
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.get_all_services()
+        return {}
+
+    def get_all_actions(self) -> dict:
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.get_all_actions()
+        return {}

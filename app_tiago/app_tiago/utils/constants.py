@@ -159,7 +159,7 @@ class RobotInfoKeys:
     TELEOP_TOPICS = "teleop_topics"
     HAS_PLAY_MOTION = "has_play_motion"
     # ¡NUEVO! Aquí mandaremos la lista de motores controlables y sus límites
-    CONTROLABLE_JOINTS = "controlableJoints"
+    CONTROLABLE_JOINTS = "controlable_joints"
 
     # --- CONFIGURACIÓN DEL AUTO-DESCUBRIMIENTO (Heurísticas) ---
 class DiscoveryConfig:

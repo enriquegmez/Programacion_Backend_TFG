@@ -482,6 +482,7 @@ class MessageRouter:
                 # SOLUCIÓN: Usamos cast para que Mypy sepa qué Payload es
                 ctrl_mode_payload = cast(ControlModeReqPayload, msg.payload)
                 event = ctrl_mode_payload.event
+                control_type = ctrl_mode_payload.type # Pillamos el type (JOINT o TELEOP)
                 # Usamos el topic relativo (sin barra) como vimos antes
                 # Extraemos el valor que venga. Si es None o una cadena vacía "", usará 'cmd_vel'
                 raw_topic = getattr(msg.payload, 'topic', None)
@@ -490,7 +491,7 @@ class MessageRouter:
                 try:
                     if self.ros_node:
                         # Extraemos la tupla con el resultado y el mensaje de error
-                        success, error_msg = self.ros_node.set_control_mode(event, topic)
+                        success, error_msg = self.ros_node.set_control_mode(event, control_type, topic)
                         self.last_control_req_arrival = 0.0  # Reset del watchdog de intervalo
                         
                         if not success:

@@ -20,7 +20,7 @@ from rclpy.node import Node  # type: ignore[import]
 from geometry_msgs.msg import Twist # type: ignore[import]
 from rclpy.executors import SingleThreadedExecutor # type: ignore[import]
 from rclpy.action import ActionClient, CancelResponse # type: ignore[import]
-from sensor_msgs.msg import BatteryState # type: ignore[import]
+from sensor_msgs.msg import BatteryState, JointState # type: ignore[import]
 from std_msgs.msg import Bool # type: ignore[import]
 from rclpy.client import Client
 from rclpy.subscription import Subscription
@@ -78,6 +78,14 @@ class TiagoBridgeNode(Node):
         # ==========================================
         self.joint_limits: list[dict[str, Any]] = []
         self.joint_publishers: dict[str, Any] = {}
+
+        self.dynamic_controllers: dict[str, list[str]] = {} # ¡NUEVO! Guarda las relaciones automáticamente
+        
+        # ¡NUEVO! Memoria para evitar bucles infinitos de comandos
+        self._visited_controllers: set[str] = set()
+        
+        self.current_joint_states: dict[str, float] = {}
+        self.create_subscription(JointState, '/joint_states', self._joint_states_callback, 10)
         
         # Nos suscribimos al URDF. Usamos TRANSIENT_LOCAL porque este topic a veces
         # solo se publica una vez al arrancar el robot y se queda "guardado" en la red.
@@ -166,6 +174,65 @@ class TiagoBridgeNode(Node):
                 if 'charge' in name.lower() or 'charging' in name.lower():
                     self.logger.info(f"¡Topic de Carga auto-descubierto en: {name}!")
                     self.charging_sub = self.create_subscription(Bool, name, self._charging_callback, 10)
+            # ¡NUEVO! Detectar controladores de articulaciones universalmente
+            if 'trajectory_msgs/msg/JointTrajectory' in types:
+                if name not in self._visited_controllers:
+                    # ¡LA CLAVE! Lo marcamos como visitado ANTES de lanzar el comando
+                    # Así, si el comando falla, no entraremos en un bucle infinito.
+                    self._visited_controllers.add(name)
+                    
+                    # Lanzamos un hilo rápido para que le pregunte a ROS 2 sin bloquear el servidor
+                    threading.Thread(target=self._resolve_controller_joints, args=(name,), daemon=True).start()
+    
+    def _resolve_controller_joints(self, topic_name: str):
+        """Usa comandos de terminal en 2º plano para preguntarle a ROS 2 qué motores posee este controlador."""
+        import subprocess
+        import ast
+        
+        parts = topic_name.split('/')
+        if len(parts) < 3: return
+        
+        controller_name = parts[1]
+        joints_list = []
+        
+        # Posibles respuestas según la versión de ROS 2
+        target_phrases = ["String array value is:", "String values are:"]
+
+        def extract_joints(output_text: str) -> list:
+            for phrase in target_phrases:
+                if phrase in output_text:
+                    # Cortamos todo lo que haya antes (incluido el error de CycloneDDS)
+                    list_str = output_text.split(phrase)[1].strip()
+                    try:
+                        return ast.literal_eval(list_str)
+                    except Exception:
+                        pass
+            return []
+        
+        # Intento 1: Arquitectura estándar ros2_control (/controller_manager)
+        try:
+            res = subprocess.check_output(
+                ['ros2', 'param', 'get', '/controller_manager', f'{controller_name}.joints'],
+                text=True, timeout=3.0, stderr=subprocess.DEVNULL
+            )
+            joints_list = extract_joints(res)
+        except Exception:
+            pass
+            
+        # Intento 2: Nodos de acción independientes (¡El que usa tu TIAGo!)
+        if not joints_list:
+            try:
+                res = subprocess.check_output(
+                    ['ros2', 'param', 'get', f'/{controller_name}', 'joints'],
+                    text=True, timeout=3.0, stderr=subprocess.DEVNULL
+                )
+                joints_list = extract_joints(res)
+            except Exception:
+                pass
+                
+        if joints_list:
+            self.dynamic_controllers[topic_name] = joints_list
+            self.logger.info(f"🤖 Controlador Universal detectado: '{topic_name}' maneja {len(joints_list)} motores.")
     
     def _battery_callback(self, msg: BatteryState):
         if msg.percentage <= 1.0:
@@ -178,6 +245,11 @@ class TiagoBridgeNode(Node):
 
     def _estop_callback(self, msg: Bool):
         self.latest_estop_active = msg.data
+
+    def _joint_states_callback(self, msg: JointState):
+        """Memoriza la posición actual de todos los motores en tiempo real."""
+        for name, pos in zip(msg.name, msg.position):
+            self.current_joint_states[name] = pos
 
     # ==========================================
     # ¡NUEVO! LECTURA DE URDF Y PUERTA RÁPIDA
@@ -320,20 +392,29 @@ class TiagoBridgeNode(Node):
                     return False, f"El topic '{name}' existe, pero no acepta Twist. Usa: {types[0]}"
         return False, f"El topic '{clean_topic}' no se ha encontrado."
     
-    def set_control_mode(self, event: str, topic: str = "cmd_vel") -> tuple[bool, str]:
+    def set_control_mode(self, event: str, control_type: str = "TELEOP", topic: str = "cmd_vel") -> tuple[bool, str]:
         if not self.is_connected:
             return False, "Robot no conectado lógicamente."
 
         if event == ControlEvent.START:
-            is_valid, msg = self.validate_topic(topic)
-            if not is_valid:
-                return False, msg
             self.is_control_active = True
-            return True, msg
+            
+            # Si es el joystick, validamos el topic de las ruedas
+            if control_type != "JOINT":
+                is_valid, msg = self.validate_topic(topic)
+                if not is_valid:
+                    self.is_control_active = False
+                    return False, msg
+                return True, msg
+            
+            # Si son articulaciones, damos luz verde directamente
+            return True, "JOINT_CONTROL"
             
         elif event == ControlEvent.STOP:
             self.is_control_active = False
-            self.stop_robot()
+            # Solo frenamos las ruedas si estábamos usándolas
+            if control_type != "JOINT":
+                self.stop_robot()
             return True, ""
             
         return False, "Evento desconocido."
@@ -361,53 +442,56 @@ class TiagoBridgeNode(Node):
 
     #FUNCION PARA MOVER ARTICULACIONES EN TIEMPO REAL (BARRA DESLIZADORA)
     def publish_joint_position(self, joint_name: str, value: float) -> bool:
-        """La 'Puerta Rápida' para seguir la barra deslizadora del móvil en vivo."""
         if not self.is_connected or not self.is_control_active:
             return False
 
-        # ==========================================
-        # ¡NUEVO! SEGURIDAD: Recortar (Clamp) el valor a los límites URDF
-        # ==========================================
+        # 1. SEGURIDAD: Recortar a los límites URDF
         if self.joint_limits:
             for limit in self.joint_limits:
                 if limit["name"] == joint_name:
-                    min_val = limit["min"]
-                    max_val = limit["max"]
-                    if value < min_val:
-                        value = min_val
-                    elif value > max_val:
-                        value = max_val
+                    value = max(limit["min"], min(limit["max"], value))
                     break
 
-        # 1. Averiguamos a qué parte del cuerpo pertenece este motor
-        controller = None
-        if "head" in joint_name:
-            controller = "head_controller"
-        elif "torso" in joint_name:
-            controller = "torso_controller"
-        elif "arm" in joint_name:
-            controller = "arm_controller"
-        elif "gripper" in joint_name:
-            controller = "gripper_controller"
-        else:
-            self.logger.warning(f"No sé a qué controlador enviar: {joint_name}")
+        # ==========================================
+        # 2. BÚSQUEDA DINÁMICA UNIVERSAL
+        # ==========================================
+        target_topic = None
+        expected_joints = []
+        
+        for topic, joints in self.dynamic_controllers.items():
+            if joint_name in joints:
+                target_topic = topic
+                expected_joints = joints
+                break
+                
+        if not target_topic:
+            self.logger.warning(f"Aún no he descubierto a qué controlador pertenece: {joint_name}")
             return False
 
-        topic = f"/{controller}/joint_trajectory"
+        if target_topic not in self.joint_publishers:
+            self.joint_publishers[target_topic] = self.create_publisher(JointTrajectory, target_topic, 10)
 
-        if topic not in self.joint_publishers:
-            self.joint_publishers[topic] = self.create_publisher(JointTrajectory, topic, 10)
-
+        # ==========================================
+        # 3. CONSTRUCCIÓN DEL PAQUETE COMPLETO
+        # ==========================================
         msg = JointTrajectory()
-        msg.joint_names = [joint_name]
+        msg.joint_names = expected_joints
         
         point = JointTrajectoryPoint()
-        point.positions = [float(value)]
+        point.positions = []
+        
+        for j_name in expected_joints:
+            if j_name == joint_name:
+                point.positions.append(float(value))
+            else:
+                current_pos = self.current_joint_states.get(j_name, 0.0)
+                point.positions.append(float(current_pos))
+                
         point.time_from_start.sec = 0
         point.time_from_start.nanosec = 200000000 # 200 milisegundos
         
         msg.points = [point]
-        self.joint_publishers[topic].publish(msg)
+        self.joint_publishers[target_topic].publish(msg)
         return True
 
     # ==========================================
@@ -859,6 +943,18 @@ class TiagoBridgeNode(Node):
         if cameras_list:
             camera_topics = self.get_camera_topics()
 
+        # ==========================================
+        # ¡NUEVO! Sincronización del estado real de los motores
+        # ==========================================
+        updated_joint_limits = []
+        for limit in self.joint_limits:
+            limit_copy = limit.copy()
+            # Leemos la posición actual de nuestra memoria (o 0.0 si aún no ha llegado)
+            limit_copy["current_value"] = self.current_joint_states.get(limit["name"], 0.0)
+            updated_joint_limits.append(limit_copy)
+        
+        #self.logger.info(f"ENVIANDO LÍMITES AL MÓVIL: {updated_joint_limits}")
+
          #has_base=False
 
         #cameras_list=[]
@@ -906,7 +1002,8 @@ class TiagoBridgeNode(Node):
                 RobotInfoKeys.HAS_MOVEIT: has_moveit,
                 RobotInfoKeys.HAS_FT_SENSOR: has_ft_sensor,
                 RobotInfoKeys.HAS_PLAY_MOTION: has_play_motion,
-                RobotInfoKeys.CONTROLABLE_JOINTS: self.joint_limits #QUE ARTICULACIONES PUEDO MOVER Y SUS LIMITES
+                RobotInfoKeys.CONTROLABLE_JOINTS: updated_joint_limits #QUE ARTICULACIONES PUEDO MOVER Y SUS LIMITES
+                
             }
         }
     
@@ -1016,11 +1113,18 @@ class Ros2Manager:
         if self._is_running and self.gateway_node:
             self.gateway_node.stop_robot()
 
-    def set_control_mode(self, event: str, topic: str = "cmd_vel") -> tuple[bool, str]:
+    def set_control_mode(self, event: str, control_type: str = "TELEOP", topic: str = "cmd_vel") -> tuple[bool, str]:
         if self._is_running and self.gateway_node and self.safety_node:
-            success, msg = self.gateway_node.set_control_mode(event, topic)
+            # Le pasamos el tipo al nodo puente
+            success, msg = self.gateway_node.set_control_mode(event, control_type, topic)
+            
             if success and event == ControlEvent.START:
-                self.safety_node.set_target_topic(msg)
+                # ¡LA MAGIA ESTÁ AQUÍ! 
+                # Si es un Joystick, activamos el Watchdog de seguridad.
+                if control_type != "JOINT":
+                    self.safety_node.set_target_topic(msg)
+                else:
+                    self.logger.info("Modo JOINT activado: Watchdog de ruedas desactivado por seguridad.")
             return success, msg
         return False, "El subsistema ROS 2 no está corriendo."
 

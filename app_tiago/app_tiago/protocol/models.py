@@ -67,6 +67,7 @@ class StreamReqPayload:
 @dataclass
 class StopStreamReqPayload:
     resource: str
+    topic: Optional[str] = None # ¡NUEVO! Para poder apagar un sensor específico sin apagar
 
 @dataclass
 class AsyncNotifyPayload:
@@ -99,9 +100,11 @@ class BaseResponsePayload:
 class QueryRespPayload(BaseResponsePayload):
     """
     Respuesta específica para QUERY_REQ.
-    Puede contener una lista de strings (ej. topics) o un diccionario complejo (ROBOT_INFO).
+    Puede contener una lista de strings (ej. topics), un diccionario complejo (ROBOT_INFO),
+    o una lista de diccionarios (MENÚ DE SENSORES).
     """
-    data: Optional[Union[List[str], Dict[str, Any]]] = None
+    # ¡NUEVO! Añadimos List[Dict[str, Any]] a las opciones permitidas
+    data: Optional[Union[List[str], Dict[str, Any], List[Dict[str, Any]]]] = None
 
 @dataclass
 class ActionFeedbackPayload(BaseResponsePayload):

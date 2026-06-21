@@ -61,6 +61,7 @@ class Resource:
     SERVICES = "SERVICES"
     ACTIONS = "ACTIONS"
     MOVEMENTS = "MOVEMENTS"  # (Opcional a futuro) Para obtener lista de movimientos predefinidos
+    SENSORS = "SENSORS"  # ¡NUEVO! Petición del menú de sensores
 
 # --- EVENTOS Y TIPOS DE CONTROL (ControlModeReq payload) ---
 class ControlEvent:
@@ -132,6 +133,7 @@ class RosMsgTypes:
     ODOMETRY = "nav_msgs/msg/Odometry"               # Odometría del robot
     JOINT_STATE = "sensor_msgs/msg/JointState"       # Estado de articulaciones
     MOVEIT_PLANNING_SCENE = "moveit_msgs/msg/PlanningScene"
+    RANGE = "sensor_msgs/msg/Range"                  # ¡NUEVO! Sensores de distancia (Ultrasonidos/Infrarrojos)
 
 # --- CLAVES DEL DICCIONARIO JSON (Para el Frontend) ---
 # Usamos constantes para no equivocarnos al teclear las keys del JSON de respuesta

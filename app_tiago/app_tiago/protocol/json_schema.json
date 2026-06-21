@@ -48,7 +48,7 @@
           "payload": {
             "required": ["resource_type"],
             "properties": {
-              "resource_type": { "enum": ["TOPICS", "SERVICES", "ACTIONS", "MOVEMENTS","ROBOT_INFO"] }
+              "resource_type": { "enum": ["TOPICS", "SERVICES", "ACTIONS", "MOVEMENTS","ROBOT_INFO", "SENSORS"] }
             }
           }
         }
@@ -111,7 +111,7 @@
           "payload": {
             "required": ["resource"],
             "properties": {
-              "resource": { "type": "string", "enum": ["camera", "lidar", "imu"] },
+              "resource": { "type": "string", "enum": ["camera", "SENSORS"] },
               "topic": { "type": "string" },
               "quality_level": { "type": "string", "enum": ["low", "medium", "high"] }
             }
@@ -138,7 +138,7 @@
           "payload": {
             "required": ["resource"],
             "properties": {
-              "resource": { "type": "string", "enum": ["camera", "lidar", "imu"] }
+              "resource": { "type": "string", "enum": ["camera", "SENSORS"] }
             }
           }
         }

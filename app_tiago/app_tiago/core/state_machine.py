@@ -14,7 +14,7 @@ from app_tiago.utils.constants import (
 # <-- ¡NUEVO! Importamos los payloads específicos que vamos a leer
 from app_tiago.protocol.models import (
     RobotMessage, CommandReqPayload, ActionReqPayload, 
-    ControlModeReqPayload, StopActionReqPayload)
+    ControlModeReqPayload, StopActionReqPayload, StreamReqPayload, StopStreamReqPayload)
 
 class ProtocolStateMachine:
     def __init__(self):
@@ -23,6 +23,8 @@ class ProtocolStateMachine:
         self.movement_state = MovementState.IDLE
         self.monitor_state = MonitorState.IDLE
         self.current_action: Optional[ActionReqPayload] = None
+        # ¡NUEVO! Memoria para saber qué streams exactos están abiertos
+        self.active_streams: set[str] = set()
 
     def client_connected(self):
         """Llamado cuando un WebSocket se ancla al servidor."""
@@ -36,6 +38,7 @@ class ProtocolStateMachine:
         self.movement_state = MovementState.IDLE
         self.monitor_state = MonitorState.IDLE
         self.current_action = None
+        self.active_streams.clear() # ¡Limpiamos la memoria!
     
     def can_transition(self, msg: RobotMessage) -> tuple[bool, int, str]:
         """
@@ -123,15 +126,17 @@ class ProtocolStateMachine:
                     return False, StatusCode.NOT_ALLOWED, "Comando denegado. Se está ejecutando una acción."
 
             # --- SUBMÁQUINA CONCURRENTE B: MONITORIZACIÓN (VÍDEO/SENSORES) ---
-            elif self.monitor_state == MonitorState.IDLE:
+            elif msg_type in [MsgType.STREAM_REQ, MsgType.STOP_STREAM_REQ]:
+                
+                # REGLA 1: Se puede pedir un stream en cualquier momento
                 if msg_type == MsgType.STREAM_REQ:
                     return True, StatusCode.OK, ""
-                return False, StatusCode.NOT_ALLOWED, "Petición de stream denegada. Ya hay un stream enviándose."
                 
-            elif self.monitor_state == MonitorState.ENVIANDO_STREAM:
-                if msg_type == MsgType.STOP_STREAM_REQ:
-                    return True, StatusCode.OK, ""
-                return False, StatusCode.NOT_ALLOWED, "Petición de parada denegada. No hay ningún stream activo."
+                # REGLA 2: Solo se puede parar si el estado es ENVIANDO_STREAM
+                elif msg_type == MsgType.STOP_STREAM_REQ:
+                    if self.monitor_state == MonitorState.ENVIANDO_STREAM:
+                        return True, StatusCode.OK, ""
+                    return False, StatusCode.NOT_ALLOWED, "Petición denegada: No hay ningún stream activo para detener."
 
             return False, StatusCode.NOT_ALLOWED, f"Mensaje '{msg_type}' no soportado en este estado."
             
@@ -223,15 +228,36 @@ class ProtocolStateMachine:
         # ==========================================
         # TRANSICIONES CONSOLIDADAS DE MONITORIZACIÓN
         # ==========================================
+        # ==========================================
+        # TRANSICIONES CONSOLIDADAS DE MONITORIZACIÓN
+        # ==========================================
         elif req_type == MsgType.STREAM_REQ:
             if success:
+                stream_payload = cast(StreamReqPayload, req_msg.payload)
+                
+                # Usamos un nombre único: new_stream_id
+                new_stream_id = stream_payload.topic if stream_payload.topic else stream_payload.resource
+                
+                self.active_streams.add(new_stream_id)
                 self.monitor_state = MonitorState.ENVIANDO_STREAM
-                self.logger.info("Transición Monitorización -> ENVIANDO_STREAM")
+                self.logger.info(f"Monitorización -> ENVIANDO_STREAM (Añadido: {new_stream_id}. Activos: {len(self.active_streams)})")
                 
         elif req_type == MsgType.STOP_STREAM_REQ:
             if success:
-                self.monitor_state = MonitorState.IDLE
-                self.logger.info("Transición Monitorización -> IDLE")
+                stop_payload = cast(StopStreamReqPayload, req_msg.payload)
+                
+                # Usamos otro nombre único: stopped_stream_id
+                stopped_stream_id: str = stop_payload.topic if stop_payload.topic else stop_payload.resource
+                
+                # Lo borramos de la memoria
+                self.active_streams.discard(stopped_stream_id)
+                
+                # ¡TU REGLA ESTRICTA! Si ya no queda ninguno, volvemos a IDLE
+                if len(self.active_streams) == 0:
+                    self.monitor_state = MonitorState.IDLE
+                    self.logger.info("Transición Monitorización -> IDLE (0 streams activos)")
+                else:
+                    self.logger.info(f"Monitorización -> Sigue en ENVIANDO_STREAM (Detenido: {stopped_stream_id}. Restantes: {len(self.active_streams)})")
 
     def trigger_session_reset(self):
         self.logger.info("Limpiando sesión... Volviendo a CONEXION_BACKEND")
@@ -239,3 +265,4 @@ class ProtocolStateMachine:
         self.movement_state = MovementState.IDLE
         self.monitor_state = MonitorState.IDLE
         self.current_action = None
+        self.active_streams.clear() # ¡Limpiamos la memoria!

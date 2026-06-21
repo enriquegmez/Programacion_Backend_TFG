@@ -365,6 +365,25 @@ class MessageRouter:
                             resp_type=RespType.QUERY_RESP, details="Backend ROS 2 no disponible."
                         )
                 
+                elif query_payload.resource_type == Resource.SENSORS:
+                    if self.ros_node:
+                        data = self.ros_node.get_available_sensors()
+                        if data:
+                            resp_payload = QueryRespPayload(
+                                success=True, code=StatusCode.OK, 
+                                resp_type=RespType.QUERY_RESP, data=data
+                            )
+                        else:
+                            resp_payload = QueryRespPayload(
+                                success=False, code=StatusCode.NOT_FOUND, 
+                                resp_type=RespType.QUERY_RESP, details="No se detectó ningún sensor compatible en la red."
+                            )
+                    else:
+                        resp_payload = QueryRespPayload(
+                            success=False, code=StatusCode.INTERNAL_ERROR, 
+                            resp_type=RespType.QUERY_RESP, details="Backend ROS 2 no disponible."
+                        )
+                
                 elif query_payload.resource_type == Resource.ROBOT_INFO:
                     # Esta llamada ahora recopila TODA la información, 
                     # incluyendo teleop_topics y camera_topics
@@ -646,8 +665,56 @@ class MessageRouter:
                             resp_payload = StreamRespPayload(
                                 success=True, code=StatusCode.OK, resp_type=RespType.STREAM_RESP, stream_url=final_url
                             )
+                elif stream_payload.resource.upper() == Resource.SENSORS:
+                    topic = stream_payload.topic
+                    if not topic:
+                        resp_payload = StreamRespPayload(
+                            success=False, code=StatusCode.BAD_REQUEST, resp_type=RespType.STREAM_RESP,
+                            details="El topic del sensor es obligatorio."
+                        )
+                    elif self.ros_node:
+                        if not self.ros_node.is_topic_active(topic):
+                            resp_payload = StreamRespPayload(
+                                success=False, code=StatusCode.NOT_FOUND, resp_type=RespType.STREAM_RESP,
+                                details=f"El sensor en '{topic}' no existe o está apagado."
+                            )
+                        else:
+                            # 1. Atrapamos el hilo asíncrono para enviar respuestas de forma continua
+                            main_loop = asyncio.get_running_loop()
+
+                            async def _send_sensor_data(sensor_json: dict):
+                                # Cada vez que haya un dato nuevo, lo enviamos al móvil en stream_data
+                                data_payload = StreamRespPayload(
+                                    success=True, code=StatusCode.OK, resp_type=RespType.STREAM_RESP,
+                                    stream_data=sensor_json
+                                )
+                                msg_out = RobotMessage(header=resp_header, payload=data_payload)
+                                await self._send_msg(msg_out, send_callback)
+                                
+                            def ros2_sensor_callback(sensor_json: dict):
+                                # Función puente: ROS 2 llama a esto, y esto envía por WebSocket
+                                asyncio.run_coroutine_threadsafe(_send_sensor_data(sensor_json), main_loop)
+
+                            # 2. Le pedimos a ROS 2 que se suscriba al topic y empiece a mandar datos
+                            success = self.ros_node.start_sensor_stream(topic, ros2_sensor_callback)
+                            
+                            # 3. Respuesta INICIAL (Avisamos al móvil de que el grifo se ha abierto)
+                            if success:
+                                resp_payload = StreamRespPayload(
+                                    success=True, code=StatusCode.OK, resp_type=RespType.STREAM_RESP,
+                                    details=f"Stream de sensor '{topic}' iniciado."
+                                )
+                            else:
+                                resp_payload = StreamRespPayload(
+                                    success=False, code=StatusCode.INTERNAL_ERROR, resp_type=RespType.STREAM_RESP,
+                                    details=f"No se pudo iniciar el stream del sensor '{topic}'."
+                                )
+                    else:
+                         resp_payload = StreamRespPayload(
+                             success=False, code=StatusCode.INTERNAL_ERROR, resp_type=RespType.STREAM_RESP,
+                             details="Backend ROS 2 no disponible."
+                         )
                 else:
-                    # Preparado para el futuro (Lidar, IMU)
                     resp_payload = StreamRespPayload(
                         success=False, code=StatusCode.NOT_ALLOWED, resp_type=RespType.STREAM_RESP,
                         details=f"El recurso '{stream_payload.resource}' aún no está implementado."
@@ -657,8 +724,16 @@ class MessageRouter:
             # "No se puede mostrar el vídeo".
             case MsgType.STOP_STREAM_REQ:
                 stop_stream_payload = cast(StopStreamReqPayload, msg.payload)
-                self.logger.info(f"Petición de parada de stream para el recurso: {stop_stream_payload.resource}")
-                # Como usamos Lazy Subscriptions, no hay que matar procesos. Con responder OK basta.
+                self.logger.info(f"Petición de parada de stream: {stop_stream_payload.resource} - {stop_stream_payload.topic}")
+                
+                # ¡NUEVO! Si era un sensor, ordenamos a ROS 2 que destruya al suscriptor
+                if stop_stream_payload.resource.upper() == Resource.SENSORS and self.ros_node:
+                    topic = getattr(stop_stream_payload, 'topic', None)
+                    if topic:
+                        self.ros_node.stop_sensor_stream(topic)
+                
+                # Como usamos Lazy Subscriptions en cámara y ahora Destructores en sensores,
+                # simplemente devolvemos un OK
                 resp_payload = GenericRespPayload(
                     success=True, code=StatusCode.OK, resp_type=RespType.STOP_STREAM_RESP
                 )

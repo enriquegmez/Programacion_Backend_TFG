@@ -20,7 +20,7 @@ from rclpy.node import Node  # type: ignore[import]
 from geometry_msgs.msg import Twist # type: ignore[import]
 from rclpy.executors import SingleThreadedExecutor # type: ignore[import]
 from rclpy.action import ActionClient, CancelResponse # type: ignore[import]
-from sensor_msgs.msg import BatteryState, JointState # type: ignore[import]
+from sensor_msgs.msg import BatteryState, JointState, LaserScan, Imu, Range, PointCloud2 # type: ignore[import] # type: ignore[import]
 from std_msgs.msg import Bool # type: ignore[import]
 from rclpy.client import Client
 from rclpy.subscription import Subscription
@@ -28,7 +28,7 @@ from rclpy.subscription import Subscription
 from play_motion2_msgs.action import PlayMotion2 # type: ignore[import]
 from play_motion2_msgs.srv import GetMotionInfo, ListMotions # type: ignore[import]
 
-from app_tiago.utils.constants import ControlEvent, RosMsgTypes, RobotInfoKeys, DiscoveryConfig
+from app_tiago.utils.constants import ControlEvent, RosMsgTypes, RobotInfoKeys, DiscoveryConfig 
 from app_tiago.ros.ros2_core_node import SafetyFilterNode
 
 class TiagoBridgeNode(Node):
@@ -86,6 +86,12 @@ class TiagoBridgeNode(Node):
         
         self.current_joint_states: dict[str, float] = {}
         self.create_subscription(JointState, '/joint_states', self._joint_states_callback, 10)
+
+        # ==========================================
+        # ¡NUEVO! MEMORIA DE SENSORES ACTIVOS
+        # ==========================================
+        # Formato: { "/scan": {"sub": Subscription, "callback": Callable, "last_sent": float} }
+        self.active_sensor_streams: dict[str, dict[str, Any]] = {}
         
         # Nos suscribimos al URDF. Usamos TRANSIENT_LOCAL porque este topic a veces
         # solo se publica una vez al arrancar el robot y se queda "guardado" en la red.
@@ -850,6 +856,185 @@ class TiagoBridgeNode(Node):
 
         camera_topics.sort(key=lambda name: (_camera_priority(name), len(name), name))
         return camera_topics
+    
+    def get_available_sensors(self) -> list[dict[str, str]]:
+        """
+        Escanea la red de ROS 2 y devuelve una lista de diccionarios con los sensores detectados.
+        Formato: [{"topic": "/scan_front_raw", "type": "LaserScan"}, ...]
+        """
+        topics_and_types = self.get_topic_names_and_types()
+        sensors_list = []
+        
+        # Nuestro Diccionario Traductor Ampliado con los datos de tu TIAGo
+        supported_types = {
+            RosMsgTypes.LASER_SCAN: "LaserScan",
+            RosMsgTypes.IMU: "Imu",
+            RosMsgTypes.BATTERY: "BatteryState",
+            RosMsgTypes.RANGE: "Range",
+            RosMsgTypes.POINT_CLOUD2: "PointCloud2" # ¡NUEVO!
+        }
+        
+        # Filtro de limpieza: Ignorar topics de procesamiento intermedio para no saturar el menú
+        exclude_keywords = ['throttle', 'filtered', 'depth/points']
+        
+        for topic_name, types in topics_and_types:
+            topic_lower = topic_name.lower()
+            
+            # Si el topic contiene palabras de procesamiento interno, lo ignoramos
+            if any(excl in topic_lower for excl in exclude_keywords):
+                continue
+                
+            # Comprobamos si es un sensor de nuestro diccionario
+            for ros_type, clean_name in supported_types.items():
+                if ros_type in types:
+                    sensors_list.append({
+                        "topic": topic_name,
+                        "type": clean_name
+                    })
+                    break 
+                    
+        # Ordenamos la lista alfabéticamente por tipo, y luego por nombre del topic
+        sensors_list.sort(key=lambda x: (x["type"], x["topic"]))
+        return sensors_list
+    
+    # ==========================================
+    # ¡NUEVO! LÓGICA DE SUSCRIPCIÓN DE SENSORES
+    # ==========================================
+    def start_sensor_stream(self, topic: str, callback: Callable) -> bool:
+        """Busca el tipo del topic, crea un suscriptor y empieza a emitir datos."""
+        topics_and_types = self.get_topic_names_and_types()
+        topic_type = None
+        
+        for name, types in topics_and_types:
+            if name == topic:
+                topic_type = types[0] # Cogemos el tipo principal (Ej: sensor_msgs/msg/LaserScan)
+                break
+                
+        if not topic_type:
+            self.logger.error(f"No se pudo suscribir: El topic {topic} no existe.")
+            return False
+            
+        # Si ya lo estamos escuchando, no hacemos nada
+        if topic in self.active_sensor_streams:
+            return True 
+
+        # ==========================================
+        # ¡SOLUCIÓN MYPY! Fábrica de callbacks tipada
+        # ==========================================
+        def make_callback(t: str, s_type: str) -> Callable[[Any], None]:
+            def callback(msg: Any) -> None:
+                self._sensor_callback(t, msg, s_type)
+            return callback
+
+        sub = None
+        # Según el tipo, usamos nuestra fábrica para crear el callback perfecto
+        if topic_type == RosMsgTypes.LASER_SCAN:
+            sub = self.create_subscription(LaserScan, topic, make_callback(topic, "LaserScan"), 10)
+        elif topic_type == RosMsgTypes.IMU:
+            sub = self.create_subscription(Imu, topic, make_callback(topic, "Imu"), 10)
+        elif topic_type == RosMsgTypes.BATTERY:
+            sub = self.create_subscription(BatteryState, topic, make_callback(topic, "BatteryState"), 10)
+        elif topic_type == RosMsgTypes.RANGE:
+            sub = self.create_subscription(Range, topic, make_callback(topic, "Range"), 10)
+        elif topic_type == RosMsgTypes.POINT_CLOUD2:
+            sub = self.create_subscription(PointCloud2, topic, make_callback(topic, "PointCloud2"), 10)
+        else:
+            self.logger.error(f"Tipo de sensor no soportado: {topic_type}")
+            return False
+            
+        # Guardamos el grifo en memoria con su reloj a cero
+            
+        # Guardamos el grifo en memoria con su reloj a cero
+        self.active_sensor_streams[topic] = {
+            "sub": sub,
+            "callback": callback,
+            "last_sent": 0.0
+        }
+        self.logger.info(f"Suscripción a sensor '{topic}' iniciada.")
+        return True
+
+    def stop_sensor_stream(self, topic: str):
+        """Destruye el suscriptor y para el flujo de datos."""
+        if topic in self.active_sensor_streams:
+            stream_data = self.active_sensor_streams.pop(topic)
+            self.destroy_subscription(stream_data["sub"])
+            self.logger.info(f"Suscripción a sensor '{topic}' destruida.")
+
+    def _sensor_callback(self, topic: str, msg: Any, sensor_type: str):
+        """El Traductor: Convierte bytes de ROS 2 en JSON y frena la velocidad (Throttler)."""
+        stream_data = self.active_sensor_streams.get(topic)
+        if not stream_data: return
+        
+        current_time = time.time()
+        # EL FRENO: Si hace menos de 0.1 segundos (10 Hz) que mandamos el último paquete, lo ignoramos.
+        # Sensores como la IMU publican a 100Hz o 200Hz. Esto salva el router Wi-Fi.
+        if current_time - stream_data["last_sent"] < 0.1:
+            return
+            
+        stream_data["last_sent"] = current_time
+        
+        json_data = {"topic": topic, "type": sensor_type, "data": {}}
+        
+        try:
+            if sensor_type == "LaserScan":
+                # ESTRATEGIA DE COMPRESIÓN PARA MÓVILES:
+                
+                # 1. Diezmado (Downsampling): Si el láser es muy denso (>500 puntos), 
+                # cogemos 1 de cada 3 puntos. Si es pequeño, lo mandamos entero.
+                step = 3 if len(msg.ranges) > 500 else 1
+                
+                # 2. Redondeo y limpieza: Redondeamos a 2 decimales y quitamos los 'inf'
+                max_r = round(float(msg.range_max), 2)
+                safe_ranges = []
+                for r in msg.ranges[::step]: # [::step] es la magia de Python para saltar elementos
+                    if r == float('inf') or r != r: # r != r detecta NaN
+                        safe_ranges.append(max_r)
+                    else:
+                        safe_ranges.append(round(float(r), 2))
+                
+                json_data["data"] = {
+                    "angle_min": msg.angle_min,
+                    "angle_max": msg.angle_max,
+                    # Como nos saltamos puntos, el incremento angular ahora es mayor
+                    "angle_increment": msg.angle_increment * step, 
+                    "range_min": msg.range_min,
+                    "range_max": msg.range_max,
+                    "ranges": safe_ranges
+                }
+            elif sensor_type == "Imu":
+                json_data["data"] = {
+                    "orientation": {"x": msg.orientation.x, "y": msg.orientation.y, "z": msg.orientation.z, "w": msg.orientation.w},
+                    "angular_velocity": {"x": msg.angular_velocity.x, "y": msg.angular_velocity.y, "z": msg.angular_velocity.z},
+                    "linear_acceleration": {"x": msg.linear_acceleration.x, "y": msg.linear_acceleration.y, "z": msg.linear_acceleration.z}
+                }
+            elif sensor_type == "BatteryState":
+                json_data["data"] = {
+                    "voltage": msg.voltage,
+                    "percentage": msg.percentage * 100.0 if msg.percentage <= 1.0 else msg.percentage,
+                    "power_supply_status": msg.power_supply_status
+                }
+            elif sensor_type == "Range":
+                json_data["data"] = {
+                    "range": msg.range,
+                    "min_range": msg.min_range,
+                    "max_range": msg.max_range,
+                    "field_of_view": msg.field_of_view
+                }
+            elif sensor_type == "PointCloud2":
+                # NUBE DE PUNTOS: Son millones de bytes. No la mandamos cruda al móvil,
+                # solo mandamos los metadatos para que Android sepa que funciona pero no se cuelgue.
+                json_data["data"] = {
+                    "width": msg.width,
+                    "height": msg.height,
+                    "is_dense": msg.is_dense,
+                    "note": "PointCloud2 es demasiado masivo para el móvil. Solo se envían metadatos."
+                }
+                
+            # Disparamos los datos limpios hacia el router web
+            stream_data["callback"](json_data)
+            
+        except Exception as e:
+            self.logger.error(f"Error traduciendo datos del sensor {topic}: {e}")
 
     def get_robot_info(self) -> dict:
         hostname = socket.gethostname()
@@ -1157,6 +1342,21 @@ class Ros2Manager:
         if self._is_running and self.gateway_node:
             return self.gateway_node.get_camera_topics()
         return []
+    
+    # ¡NUEVO! Puente para el radar de sensores
+    def get_available_sensors(self) -> list[dict[str, str]]:
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.get_available_sensors()
+        return []
+    
+    def start_sensor_stream(self, topic: str, callback: Callable) -> bool:
+        if self._is_running and self.gateway_node:
+            return self.gateway_node.start_sensor_stream(topic, callback)
+        return False
+        
+    def stop_sensor_stream(self, topic: str):
+        if self._is_running and self.gateway_node:
+            self.gateway_node.stop_sensor_stream(topic)
     
     def get_robot_capabilities(self) -> dict:
         if self._is_running and self.gateway_node:

@@ -20,7 +20,9 @@ from rclpy.node import Node  # type: ignore[import]
 from geometry_msgs.msg import Twist # type: ignore[import]
 from rclpy.executors import SingleThreadedExecutor # type: ignore[import]
 from rclpy.action import ActionClient, CancelResponse # type: ignore[import]
-from sensor_msgs.msg import BatteryState, JointState, LaserScan, Imu, Range, PointCloud2 # type: ignore[import] # type: ignore[import]
+from sensor_msgs.msg import BatteryState, JointState, LaserScan, Imu, Range, PointCloud2, NavSatFix, Temperature # ¡Añadidos NavSatFix y Temperature! # type: ignore[import]
+from nav_msgs.msg import Odometry # ¡NUEVO!
+from geometry_msgs.msg import WrenchStamped # ¡NUEVO! # type: ignore[import] 
 from std_msgs.msg import Bool # type: ignore[import]
 from rclpy.client import Client
 from rclpy.subscription import Subscription
@@ -92,6 +94,16 @@ class TiagoBridgeNode(Node):
         # ==========================================
         # Formato: { "/scan": {"sub": Subscription, "callback": Callable, "last_sent": float} }
         self.active_sensor_streams: dict[str, dict[str, Any]] = {}
+
+        # ==========================================
+        # ¡NUEVO! ESCUDO ANTICOLISIÓN (Segundo Plano)
+        # ==========================================
+        self.safety_lidar_topics: set[str] = set()
+        self.imminent_collisions: dict[str, bool] = {}
+
+        # ¡NUEVO! Chivato de seguridad
+        self.safety_alert = "OK"
+        self.create_subscription(String, 'web_teleop/safety_alert', self._safety_alert_callback, 10)
         
         # Nos suscribimos al URDF. Usamos TRANSIENT_LOCAL porque este topic a veces
         # solo se publica una vez al arrancar el robot y se queda "guardado" en la red.
@@ -160,6 +172,9 @@ class TiagoBridgeNode(Node):
 
         # --- FIN PRUEBA --- 
 
+    def _safety_alert_callback(self, msg: String):
+        self.safety_alert = msg.data
+    
     def _discovery_timer_callback(self) -> None:
         if self.battery_sub is not None and self.estop_sub is not None:
             return
@@ -180,6 +195,23 @@ class TiagoBridgeNode(Node):
                 if 'charge' in name.lower() or 'charging' in name.lower():
                     self.logger.info(f"¡Topic de Carga auto-descubierto en: {name}!")
                     self.charging_sub = self.create_subscription(Bool, name, self._charging_callback, 10)
+            
+            # ==========================================
+            # ¡NUEVO! Auto-descubrimiento del Escudo Anticolisión
+            # ==========================================
+            if 'sensor_msgs/msg/LaserScan' in types:
+                if name not in self.safety_lidar_topics:
+                    self.safety_lidar_topics.add(name)
+                    
+                    # Fábrica para saber de qué topic viene la alerta
+                    def make_safety_callback(t_name: str) -> Callable[[LaserScan], None]:
+                        def cb(msg: LaserScan) -> None:
+                            self._safety_lidar_callback(t_name, msg)
+                        return cb
+                        
+                    self.create_subscription(LaserScan, name, make_safety_callback(name), QoSProfile(depth=1))
+                    self.logger.info(f"🛡️ Escudo Anticolisión activado en segundo plano: {name}")
+
             # ¡NUEVO! Detectar controladores de articulaciones universalmente
             if 'trajectory_msgs/msg/JointTrajectory' in types:
                 if name not in self._visited_controllers:
@@ -337,6 +369,15 @@ class TiagoBridgeNode(Node):
             if hasattr(self, 'action_progress_timer') and self.action_progress_timer:
                 self.action_progress_timer.cancel()
             
+            # ==========================================
+            # ¡LA SOLUCIÓN AL SPAM! Limpieza de Sensores
+            # Destruimos todos los suscriptores para que dejen de mandar datos a un socket muerto
+            # ==========================================
+            if hasattr(self, 'active_sensor_streams'):
+                topics_to_close = list(self.active_sensor_streams.keys())
+                for topic in topics_to_close:
+                    self.stop_sensor_stream(topic)
+            
             # El freno de las ruedas que ya tenías
             self.stop_robot() 
             
@@ -425,16 +466,34 @@ class TiagoBridgeNode(Node):
             
         return False, "Evento desconocido."
 
-    def publish_velocity(self, v: float, w: float) -> bool:
+    # ¡NUEVO! Analizador rápido del láser
+    def _safety_lidar_callback(self, topic_name: str, msg: LaserScan):
+        # Distancia mínima de seguridad (35 cm). Ajustable según el tamaño de tu robot.
+        SAFE_DIST = 0.35 
+        collision = False
+        for r in msg.ranges:
+            # Ignoramos rebotes contra el propio chasis (0.0 a 0.05) y lecturas infinitas
+            if 0.05 < r < SAFE_DIST:
+                collision = True
+                break
+        self.imminent_collisions[topic_name] = collision
+
+    def publish_velocity(self, v: float, w: float) -> tuple[bool, str]: # ¡Cambio a Tupla!
         if not self.is_connected or not self.is_control_active:
-            return False
+            return False, "Control no activo."
+
+        # ¡LA LECTURA DEL CHIVATO!
+        if v > 0.0 and self.safety_alert in ["FRONT", "BOTH"]:
+            return False, "⚠️ ANTICOLISIÓN: Obstáculo detectado en la dirección de avance."
+        if v < 0.0 and self.safety_alert in ["REAR", "BOTH"]:
+            return False, "⚠️ ANTICOLISIÓN: Obstáculo detectado en la dirección de retroceso."
 
         msg = Twist()
         msg.linear.x = float(v)
         msg.angular.z = float(w)
         
         self.vel_publisher.publish(msg)
-        return True
+        return True, ""
 
     def stop_robot(self):
         try:
@@ -866,12 +925,21 @@ class TiagoBridgeNode(Node):
         sensors_list = []
         
         # Nuestro Diccionario Traductor Ampliado con los datos de tu TIAGo
+        # Nuestro Diccionario Traductor Ampliado
         supported_types = {
             RosMsgTypes.LASER_SCAN: "LaserScan",
             RosMsgTypes.IMU: "Imu",
             RosMsgTypes.BATTERY: "BatteryState",
             RosMsgTypes.RANGE: "Range",
-            RosMsgTypes.POINT_CLOUD2: "PointCloud2" # ¡NUEVO!
+            RosMsgTypes.POINT_CLOUD2: "PointCloud2",
+            
+            # ==========================================
+            # ¡NUEVOS SENSORES UNIVERSALES!
+            # ==========================================
+            RosMsgTypes.ODOMETRY: "Odometry",
+            RosMsgTypes.NAV: "NavSatFix",
+            RosMsgTypes.WRENCH: "Wrench",
+            RosMsgTypes.TEMPERATURE: "Temperature"
         }
         
         # Filtro de limpieza: Ignorar topics de procesamiento intermedio para no saturar el menú
@@ -938,6 +1006,15 @@ class TiagoBridgeNode(Node):
             sub = self.create_subscription(Range, topic, make_callback(topic, "Range"), 10)
         elif topic_type == RosMsgTypes.POINT_CLOUD2:
             sub = self.create_subscription(PointCloud2, topic, make_callback(topic, "PointCloud2"), 10)
+        # --- ¡LOS NUEVOS! ---
+        elif topic_type == RosMsgTypes.ODOMETRY:
+            sub = self.create_subscription(Odometry, topic, make_callback(topic, "Odometry"), 10)
+        elif topic_type == RosMsgTypes.NAV:
+            sub = self.create_subscription(NavSatFix, topic, make_callback(topic, "NavSatFix"), 10)
+        elif topic_type == RosMsgTypes.WRENCH:
+            sub = self.create_subscription(WrenchStamped, topic, make_callback(topic, "Wrench"), 10)
+        elif topic_type == RosMsgTypes.TEMPERATURE:
+            sub = self.create_subscription(Temperature, topic, make_callback(topic, "Temperature"), 10)
         else:
             self.logger.error(f"Tipo de sensor no soportado: {topic_type}")
             return False
@@ -1028,6 +1105,35 @@ class TiagoBridgeNode(Node):
                     "height": msg.height,
                     "is_dense": msg.is_dense,
                     "note": "PointCloud2 es demasiado masivo para el móvil. Solo se envían metadatos."
+                }
+            elif sensor_type == "PointCloud2":
+                json_data["data"] = {
+                    "width": msg.width, "height": msg.height, "is_dense": msg.is_dense,
+                    "note": "PointCloud2 es demasiado masivo para el móvil. Solo se envían metadatos."
+                }
+                
+            # --- ¡LOS NUEVOS TRADUCTORES A JSON! ---
+            elif sensor_type == "Odometry":
+                json_data["data"] = {
+                    "position": {"x": msg.pose.pose.position.x, "y": msg.pose.pose.position.y},
+                    "linear_velocity": msg.twist.twist.linear.x,
+                    "angular_velocity": msg.twist.twist.angular.z
+                }
+            elif sensor_type == "NavSatFix":
+                json_data["data"] = {
+                    "latitude": msg.latitude,
+                    "longitude": msg.longitude,
+                    "altitude": msg.altitude,
+                    "status": msg.status.status # Indica si tiene cobertura de satélites
+                }
+            elif sensor_type == "Wrench":
+                json_data["data"] = {
+                    "force": {"x": msg.wrench.force.x, "y": msg.wrench.force.y, "z": msg.wrench.force.z},
+                    "torque": {"x": msg.wrench.torque.x, "y": msg.wrench.torque.y, "z": msg.wrench.torque.z}
+                }
+            elif sensor_type == "Temperature":
+                json_data["data"] = {
+                    "temperature": msg.temperature # En grados Celsius
                 }
                 
             # Disparamos los datos limpios hacia el router web
@@ -1313,10 +1419,10 @@ class Ros2Manager:
             return success, msg
         return False, "El subsistema ROS 2 no está corriendo."
 
-    def publish_velocity(self, v: float, w: float) -> bool:
+    def publish_velocity(self, v: float, w: float) -> tuple[bool, str]:
         if self._is_running and self.gateway_node:
             return self.gateway_node.publish_velocity(v, w)
-        return False
+        return False, "Subsistema ROS 2 apagado."
     
     def check_connection(self) -> int:
         if self._is_running and self.gateway_node:

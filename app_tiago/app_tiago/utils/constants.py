@@ -134,6 +134,9 @@ class RosMsgTypes:
     JOINT_STATE = "sensor_msgs/msg/JointState"       # Estado de articulaciones
     MOVEIT_PLANNING_SCENE = "moveit_msgs/msg/PlanningScene"
     RANGE = "sensor_msgs/msg/Range"                  # ¡NUEVO! Sensores de distancia (Ultrasonidos/Infrarrojos)
+    NAV = 'sensor_msgs/msg/NavSatFix'
+    WRENCH = 'geometry_msgs/msg/WrenchStamped'
+    TEMPERATURE = 'sensor_msgs/msg/Temperature'
 
 # --- CLAVES DEL DICCIONARIO JSON (Para el Frontend) ---
 # Usamos constantes para no equivocarnos al teclear las keys del JSON de respuesta

@@ -543,18 +543,17 @@ class MessageRouter:
                 v = ctrl_payload.data.v
                 w = ctrl_payload.data.w
                 
-                # Leemos los campos opcionales para las articulaciones
                 joint_name = ctrl_payload.data.joint_name
                 joint_value = ctrl_payload.data.joint_value
                 
                 current_time = time.time()
                 publish_success = True
+                publish_error_msg = "" # ¡NUEVO! Motivo del fallo
                 
-                # ¡NUEVO! Detectamos si estamos controlando ruedas o cuerpo
                 is_teleop = not joint_name 
 
                 # ==========================================
-                # 1. LÓGICA DE RUEDAS (Con Watchdog Estricto)
+                # 1. LÓGICA DE RUEDAS (Con Watchdog y Escudo)
                 # ==========================================
                 if is_teleop:
                     if self.last_control_req_arrival > 0:
@@ -562,41 +561,40 @@ class MessageRouter:
                     else:
                         time_since_last_packet = 0.0
 
-                    # Si el "hueco" de silencio es > 0.6s, hay un problema de red
                     if time_since_last_packet > 0.6:
-                        self.logger.warning(f"⚠️ HUECO DE RED (Ruedas): {time_since_last_packet:.2f}s sin recibir órdenes. Frenado.")
+                        self.logger.warning(f"⚠️ HUECO DE RED: {time_since_last_packet:.2f}s sin recibir órdenes.")
                         publish_success = False
-                        if self.ros_node:
-                            self.ros_node.stop_robot()
+                        publish_error_msg = f"Red inestable (Salto de {time_since_last_packet:.2f}s)."
+                        if self.ros_node: self.ros_node.stop_robot()
                     else:
                         if self.ros_node:
                             try:
-                                publish_success = self.ros_node.publish_velocity(v, w)
+                                # ¡AQUÍ ESTÁ LA LECTURA DE LA TUPLA!
+                                publish_success, publish_error_msg = self.ros_node.publish_velocity(v, w)
                             except Exception as e:
-                                self.logger.error(f"Fallo crítico enviando velocidad: {e}")
                                 publish_success = False
+                                publish_error_msg = "Error interno publicando velocidad."
                         else:
                             publish_success = False
+                            publish_error_msg = "Backend ROS 2 no disponible."
 
-                    # Actualizamos el marcador de tiempo del joystick
                     self.last_control_req_arrival = current_time
 
                 # ==========================================
-                # 2. LÓGICA DE ARTICULACIONES (Sin Watchdog Estricto)
+                # 2. LÓGICA DE ARTICULACIONES
                 # ==========================================
                 else:
                     if self.ros_node:
                         try:
-                            # Aquí no hay peligro de choque infinito, el motor va a una posición exacta y para
                             publish_success = self.ros_node.publish_joint_position(joint_name, joint_value)
-                        except Exception as e:
-                            self.logger.error(f"Fallo crítico enviando orden de articulación: {e}")
+                            if not publish_success: publish_error_msg = "Error en articulación."
+                        except Exception:
                             publish_success = False
+                            publish_error_msg = "Excepción en articulación."
                     else:
                         publish_success = False
+                        publish_error_msg = "Backend ROS 2 no disponible."
                     
-                    # Para mantener el ritmo de respuesta al móvil sin falsear el timer de las ruedas
-                    # actualizamos también el reloj para que no salten errores al volver al Joystick
                     self.last_control_req_arrival = current_time
 
                 # ==========================================
@@ -606,15 +604,11 @@ class MessageRouter:
                     self.last_control_resp_time = current_time
                     
                     if not publish_success:
-                        error_detail = (
-                            f"Frenado de seguridad: Red inestable (Salto de {time_since_last_packet:.2f}s)." 
-                            if is_teleop else "Error enviando posición a la articulación."
-                        )
                         resp_payload = GenericRespPayload(
                             success=False, 
                             code=StatusCode.INTERNAL_ERROR, 
                             resp_type=RespType.CONTROL_RESP, 
-                            details=error_detail
+                            details=publish_error_msg # MANDAMOS EL TEXTO EXACTO AL MÓVIL
                         )
                     else:
                         resp_payload = GenericRespPayload(
@@ -724,16 +718,15 @@ class MessageRouter:
             # "No se puede mostrar el vídeo".
             case MsgType.STOP_STREAM_REQ:
                 stop_stream_payload = cast(StopStreamReqPayload, msg.payload)
-                self.logger.info(f"Petición de parada de stream: {stop_stream_payload.resource} - {stop_stream_payload.topic}")
                 
-                # ¡NUEVO! Si era un sensor, ordenamos a ROS 2 que destruya al suscriptor
+                # Leemos el topic de forma segura por si viene None
+                topic = getattr(stop_stream_payload, 'topic', 'Desconocido')
+                self.logger.info(f"Petición de parada de stream: {stop_stream_payload.resource} - {topic}")
+                
                 if stop_stream_payload.resource.upper() == Resource.SENSORS and self.ros_node:
-                    topic = getattr(stop_stream_payload, 'topic', None)
-                    if topic:
+                    if topic != 'Desconocido':
                         self.ros_node.stop_sensor_stream(topic)
                 
-                # Como usamos Lazy Subscriptions en cámara y ahora Destructores en sensores,
-                # simplemente devolvemos un OK
                 resp_payload = GenericRespPayload(
                     success=True, code=StatusCode.OK, resp_type=RespType.STOP_STREAM_RESP
                 )

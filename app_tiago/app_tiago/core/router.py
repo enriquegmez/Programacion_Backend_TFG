@@ -8,6 +8,9 @@ import asyncio
 import logging
 import time
 import socket
+import os         # ¡NUEVO! Para leer variables de entorno
+import psutil     # ¡NUEVO! Para la telemetría del PC (Acuérdate de hacer pip install psutil) 
+import subprocess # ¡Añade esto arriba del todo en tus imports!
 from typing import cast, Any
 from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType, Resource
 from app_tiago.protocol.models import (
@@ -58,7 +61,179 @@ class MessageRouter:
             return ip
         except Exception:
             return "127.0.0.1"
+        
+    def _get_host_telemetry(self) -> dict:
+        """Lee el estado del PC del robot de forma independiente para que un fallo no tire el resto."""
+        # 1. CPU
+        try:
+            cpu_pct = psutil.cpu_percent(interval=0.1)
+        except Exception as e:
+            self.logger.error(f"Fallo al leer CPU: {e}")
+            cpu_pct = 0.0
 
+        # 2. RAM
+        try:
+            mem = psutil.virtual_memory()
+            ram_used_gb = round(mem.used / (1024**3), 2)
+            ram_total_gb = round(mem.total / (1024**3), 2)
+            ram_pct = mem.percent
+        except Exception as e:
+            self.logger.error(f"Fallo al leer RAM: {e}")
+            ram_used_gb = 0.0
+            ram_total_gb = 0.0
+            ram_pct = 0.0
+
+        # 3. Temperatura
+        temp_c = 0.0
+        try:
+            temps = psutil.sensors_temperatures()
+            if temps:
+                for name, entries in temps.items():
+                    if entries:
+                        temp_c = entries[0].current
+                        break
+        except Exception as e:
+            self.logger.warning(f"Fallo al leer Sensores de Temperatura: {e}")
+
+        # 4. Red ROS 2 (Esto usa el SO, casi nunca falla)
+        try:
+            ros_distro = os.environ.get('ROS_DISTRO', 'Desconocida')
+            domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
+            current_dds = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+
+            # ¡NUEVO! Comprobamos si el robot tiene el Discovery configurado
+            discovery_server = os.environ.get('ROS_DISCOVERY_SERVER', '')
+            use_discovery = True if discovery_server else False
+
+            base_path = f"/opt/ros/{ros_distro}/share"
+            rmws = []
+            if os.path.exists(base_path):
+                for folder in os.listdir(base_path):
+                    if folder.startswith('rmw_') and folder.endswith('_cpp') and "implementation" not in folder:
+                        rmws.append(folder)
+            
+            if not rmws:
+                rmws = ["rmw_fastrtps_cpp"]
+        except Exception as e:
+            self.logger.error(f"Fallo leyendo el entorno ROS: {e}")
+            ros_distro = "Error"
+            domain_id = "0"
+            current_dds = "Error"
+            rmws = ["Error"]
+
+        # Devolvemos siempre un diccionario con todas las claves, pase lo que pase
+        return {
+            "cpu_pct": cpu_pct,
+            "ram_used_gb": ram_used_gb,
+            "ram_total_gb": ram_total_gb,
+            "ram_pct": ram_pct,
+            "temp_c": temp_c,
+            "ros_distro": ros_distro,
+            "ros_domain_id": domain_id,
+            "current_dds": current_dds,
+            "available_dds": rmws,
+            "use_discovery": use_discovery # ¡NUEVO!
+        }
+
+    def _write_env_file(self, domain_id: str, dds: str, use_discovery: bool) -> bool:
+        """Sobrescribe el archivo maestro y gestiona el Discovery Server nativo de Linux."""
+        try:
+            ros_distro = os.environ.get('ROS_DISTRO', 'humble') # Por defecto humble o el que tengas
+
+            # 1. Escribimos nuestro archivo de configuración
+            env_path = os.path.expanduser('~/.tiago_app_config.env')
+            with open(env_path, 'w') as f:
+                f.write(f"export ROS_DOMAIN_ID={domain_id}\n")
+                f.write(f"export RMW_IMPLEMENTATION={dds}\n")
+                # Si el usuario lo pide y usamos FastDDS, inyectamos la variable
+                if use_discovery and "fastrtps" in dds.lower():
+                    f.write(f"export ROS_DISCOVERY_SERVER=127.0.0.1:11811\n")
+                    
+            # 2. Automatizamos el .bashrc de forma segura (como ya teníamos)
+            bashrc_path = os.path.expanduser('~/.bashrc')
+            source_line = "source ~/.tiago_app_config.env"
+            
+            line_exists = False
+            if os.path.exists(bashrc_path):
+                with open(bashrc_path, 'r') as f:
+                    if source_line in f.read():
+                        line_exists = True
+            
+            if not line_exists:
+                with open(bashrc_path, 'a') as f:
+                    f.write("\n# Añadido automáticamente por TIAGo App (Configuración de Red)\n")
+                    f.write(source_line + "\n")
+
+            # ==========================================
+            # 3. ¡LA MAGIA! EL SERVICIO SYSTEMD DE LINUX
+            # ==========================================
+            service_dir = os.path.expanduser('~/.config/systemd/user')
+            os.makedirs(service_dir, exist_ok=True)
+            service_path = os.path.join(service_dir, 'fastdds-discovery.service')
+
+            if use_discovery and "fastrtps" in dds.lower():
+                # Creamos el archivo del servicio para que Linux lo arranque al encender el robot
+                service_content = f"""[Unit]
+Description=Fast DDS Discovery Server for TIAGo App
+After=network.target
+
+[Service]
+ExecStart=/bin/bash -c "source /opt/ros/{ros_distro}/setup.bash && fastdds discovery -i 0 -p 11811"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+"""
+                with open(service_path, 'w') as f:
+                    f.write(service_content)
+
+                # Le decimos a Linux que recargue sus archivos y active el nuestro sin sudo
+                subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+                subprocess.run(["systemctl", "--user", "enable", "fastdds-discovery.service"], check=False)
+                subprocess.run(["systemctl", "--user", "start", "fastdds-discovery.service"], check=False)
+                self.logger.info("✅ Discovery Server configurado como servicio nativo de Linux.")
+            else:
+                # Si desmarcamos la casilla, destruimos el servicio y lo paramos
+                if os.path.exists(service_path):
+                    subprocess.run(["systemctl", "--user", "stop", "fastdds-discovery.service"], check=False)
+                    subprocess.run(["systemctl", "--user", "disable", "fastdds-discovery.service"], check=False)
+                    os.remove(service_path)
+                    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+                    self.logger.info("❌ Discovery Server desactivado.")
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Error configurando el entorno o el .bashrc: {e}")
+            return False
+
+    async def _execute_power_command(self, action: str):
+        """Usa DBus para mandar la orden al SO y captura errores para depuración."""
+        await asyncio.sleep(1.0)
+        self.logger.critical(f"¡EJECUTANDO COMANDO DE ENERGÍA: {action.upper()}!")
+        
+        try:
+            # Seleccionamos el comando exacto
+            dbus_method = "Reboot" if action == Action.REBOOT else "PowerOff"
+            cmd = [
+                "dbus-send", "--system", "--print-reply", 
+                "--dest=org.freedesktop.login1", "/org/freedesktop/login1", 
+                f"org.freedesktop.login1.Manager.{dbus_method}", "boolean:true"
+            ]
+            
+            # Ejecutamos el comando y capturamos la salida de Linux
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                # ¡AQUÍ ESTÁ EL CHIVATO! Si Linux rechaza el apagado, lo verás en la consola
+                self.logger.error(f"❌ FALLO CRÍTICO DE ENERGÍA: Linux rechazó el comando.")
+                self.logger.error(f"Motivo (stderr): {result.stderr.strip()}")
+            else:
+                self.logger.info("✅ Comando de energía aceptado por el Sistema Operativo.")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Excepción interna al intentar ejecutar comando de energía: {e}")
     # ==========================================
     # EL WATCHDOG (Perro Guardián ROS 2)
     # ==========================================
@@ -213,6 +388,26 @@ class MessageRouter:
                                 success=False, code=StatusCode.INTERNAL_ERROR, 
                                 resp_type=RespType.COMMAND_RESP, details=f"Error interno al conectar: {str(e)}"
                             )
+                    # ¡NUEVO! Comandos de Lobby (Configuración de Red)
+                    case Action.CHANGE_VAR:
+                        domain_id = cmd_payload.param1 or "0"
+                        dds = cmd_payload.param2 or "rmw_fastrtps_cpp"
+                        use_discovery = cmd_payload.param3 if cmd_payload.param3 is not None else False
+                        
+                        success = self._write_env_file(domain_id, dds, use_discovery)
+                        if success:
+                            resp_payload = GenericRespPayload(success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP)
+                        else:
+                            resp_payload = GenericRespPayload(
+                                success=False, code=StatusCode.INTERNAL_ERROR, 
+                                resp_type=RespType.COMMAND_RESP, details="Error escribiendo configuración .env"
+                            )
+
+                    # ¡NUEVO! Comandos de Lobby (Energía)
+                    case Action.REBOOT | Action.SHUTDOWN:
+                        resp_payload = GenericRespPayload(success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP)
+                        # Lanzamos la orden mortal como una tarea asíncrona para que no bloquee este return
+                        asyncio.create_task(self._execute_power_command(action))                    
                     case Action.DISCONNECT:
                         try:
 
@@ -255,7 +450,15 @@ class MessageRouter:
             case MsgType.QUERY_REQ:
                 query_payload = cast(QueryReqPayload, msg.payload)
                 
-                if not self.ros_node:
+                # ¡NUEVO! Consulta de la Sala de Espera (No necesita ROS 2)
+                if query_payload.resource_type == Resource.HOST_INFO:
+                    telemetry_data = self._get_host_telemetry()
+                    resp_payload = QueryRespPayload(
+                        success=True, code=StatusCode.OK, 
+                        resp_type=RespType.QUERY_RESP, data=telemetry_data
+                    )
+                
+                elif not self.ros_node:
                     resp_payload = QueryRespPayload(
                         success=False, 
                         code=StatusCode.INTERNAL_ERROR, 
@@ -742,6 +945,11 @@ class MessageRouter:
         # ==========================================
         if resp_payload:
             resp_msg = RobotMessage(header=resp_header, payload=resp_payload)
+
+            # --- ¡AÑADE ESTA LÍNEA AQUÍ! ---
+            if msg_type == MsgType.QUERY_REQ:
+                print(f"\n[CHIVATO PYTHON] Voy a enviar esto al móvil: {resp_payload}\n")
+            # -------------------------------
             
             # 1. Sincronizamos la máquina de estados con lo que acaba de suceder
             self.state_machine.commit_transition(msg, resp_msg)
@@ -753,11 +961,12 @@ class MessageRouter:
             # SOLUCIÓN: Usamos cast de nuevo y nos aseguramos de que resp_payload sea GenericRespPayload
             if msg_type == MsgType.COMMAND_REQ:
                 cmd_payload = cast(CommandReqPayload, msg.payload)
-                if cmd_payload.action == Action.END:
+                # ¡NUEVO! Añadidos REBOOT y SHUTDOWN
+                if cmd_payload.action in [Action.END, Action.REBOOT, Action.SHUTDOWN]:
                     # Comprobamos el success de forma segura con getattr
                     is_success = getattr(resp_payload, 'success', False)
                     if is_success:
-                        self.logger.info("Solicitando a server.py el cierre del túnel WebSocket...")
+                        self.logger.info("Cerrando el túnel WebSocket de forma controlada...")
                         await close_callback()
 
     # ==========================================

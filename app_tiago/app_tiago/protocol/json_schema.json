@@ -32,7 +32,7 @@
           "payload": {
             "required": ["action"],
             "properties": {
-              "action": { "enum": ["connect", "disconnect", "change_vars", "end", "get_history", "ssh"] },
+              "action": { "enum": ["connect", "disconnect", "change_vars", "end", "get_history", "ssh", "reboot", "shutdown"] },
               "param1": { "type": "string" },
               "param2": { "type": "string" },
               "param3": { "type": "boolean" }
@@ -48,7 +48,7 @@
           "payload": {
             "required": ["resource_type"],
             "properties": {
-              "resource_type": { "enum": ["TOPICS", "SERVICES", "ACTIONS", "MOVEMENTS","ROBOT_INFO", "SENSORS"] }
+              "resource_type": { "enum": ["TOPICS", "SERVICES", "ACTIONS", "MOVEMENTS","ROBOT_INFO", "SENSORS", "HOST_INFO"] }
             }
           }
         }

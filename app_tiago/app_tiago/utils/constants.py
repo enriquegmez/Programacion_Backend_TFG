@@ -41,7 +41,9 @@ class RespType:
 class Action:
     CONNECT = "connect"
     DISCONNECT = "disconnect"
-    CHANGE_VAR = "change_vars"
+    CHANGE_VAR = "change_vars"   # <-- Lo usaremos para setear el ROS_DOMAIN_ID y DDS
+    REBOOT = "reboot"            # ¡NUEVO! Reiniciar el Sistema Operativo
+    SHUTDOWN = "shutdown"        # ¡NUEVO! Apagar el Sistema Operativo
     END = "end"
     GET_HISTORY = "get_history"
     SSH_CMD = "ssh"
@@ -54,14 +56,15 @@ class ActionType:
 
 # --- RECURSOS (QueryReq resource_type) ---
 class Resource:
+    HOST_INFO = "HOST_INFO"  # ¡NUEVO! Petición de telemetría del PC del robot (CPU, RAM, Temp...)
     ROBOT_INFO = "ROBOT_INFO"
     TELEOP = "TELEOP"
     CAMERAS = "CAMERAS"
     TOPICS = "TOPICS"
     SERVICES = "SERVICES"
     ACTIONS = "ACTIONS"
-    MOVEMENTS = "MOVEMENTS"  # (Opcional a futuro) Para obtener lista de movimientos predefinidos
-    SENSORS = "SENSORS"  # ¡NUEVO! Petición del menú de sensores
+    MOVEMENTS = "MOVEMENTS"
+    SENSORS = "SENSORS"
 
 # --- EVENTOS Y TIPOS DE CONTROL (ControlModeReq payload) ---
 class ControlEvent:

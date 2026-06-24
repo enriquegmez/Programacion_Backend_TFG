@@ -9,12 +9,12 @@ import logging
 from typing import cast, Optional # <-- ¡NUEVO! Importamos cast y Optional
 from app_tiago.utils.constants import (
     MonitorState, MsgType, Action, ControlEvent, 
-    ServerState, MovementState, StatusCode
+    ServerState, MovementState, StatusCode, Resource
 )
 # <-- ¡NUEVO! Importamos los payloads específicos que vamos a leer
 from app_tiago.protocol.models import (
     RobotMessage, CommandReqPayload, ActionReqPayload, 
-    ControlModeReqPayload, StopActionReqPayload, StreamReqPayload, StopStreamReqPayload)
+    ControlModeReqPayload, StopActionReqPayload, StreamReqPayload, StopStreamReqPayload, QueryReqPayload)
 
 class ProtocolStateMachine:
     def __init__(self):
@@ -58,12 +58,20 @@ class ProtocolStateMachine:
         # 2. ESTADO GLOBAL: CONEXION BACKEND
         if self.global_state == ServerState.CONEXION_BACKEND:
             if msg_type == MsgType.COMMAND_REQ:
-                # SOLUCIÓN: Usamos cast para acceder a 'action' de forma segura
                 cmd_payload = cast(CommandReqPayload, msg.payload)
                 action = cmd_payload.action
-                if action in [Action.CONNECT, Action.END]:
+                # 1. Añadimos los 3 comandos nuevos a la lista de permitidos
+                if action in [Action.CONNECT, Action.END, Action.CHANGE_VAR, Action.REBOOT, Action.SHUTDOWN]:
                     return True, StatusCode.OK, ""
                 return False, StatusCode.NOT_ALLOWED, f"Acción '{action}' denegada. Primero envíe 'connect'."
+            
+            # 2. Permitimos preguntar por la telemetría del PC (pero no por cosas de ROS 2)
+            if msg_type == MsgType.QUERY_REQ:
+                query_payload = cast(QueryReqPayload, msg.payload)
+                if query_payload.resource_type == Resource.HOST_INFO:
+                    return True, StatusCode.OK, ""
+                return False, StatusCode.NOT_ALLOWED, f"La consulta '{query_payload.resource_type}' no está permitida en la sala de espera."
+
             return False, StatusCode.NOT_ALLOWED, f"Mensaje '{msg_type}' denegado. Robot no conectado."
 
         # 2. ESTADO GLOBAL: SESION INICIADA
@@ -171,6 +179,9 @@ class ProtocolStateMachine:
                     self.trigger_session_reset()
                 elif action == Action.END:
                     self.logger.info("Transición -> FIN DEL PROTOCOLO")
+                elif action in [Action.REBOOT, Action.SHUTDOWN]:
+                    self.logger.info(f"El sistema ha ordenado: {action.upper()}. Preparando desconexión inminente...")
+                    self.trigger_session_reset()
                     
         elif req_type == MsgType.CONTROL_MODE_REQ:
             # SOLUCIÓN: Cast para acceder a 'event'

@@ -11,7 +11,7 @@ import socket
 import os         # ¡NUEVO! Para leer variables de entorno
 import psutil     # ¡NUEVO! Para la telemetría del PC (Acuérdate de hacer pip install psutil) 
 import subprocess # ¡Añade esto arriba del todo en tus imports!
-from typing import cast, Any
+from typing import cast, Any, Optional, List
 from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType, Resource
 from app_tiago.protocol.models import (
     RobotMessage, MessageHeader, GenericRespPayload, 
@@ -63,13 +63,13 @@ class MessageRouter:
             return "127.0.0.1"
         
     def _get_host_telemetry(self) -> dict:
-        """Lee el estado del PC del robot de forma independiente para que un fallo no tire el resto."""
+        """Lee el estado del PC del robot. Si algo falla, devuelve None para ese campo."""
         # 1. CPU
         try:
             cpu_pct = psutil.cpu_percent(interval=0.1)
         except Exception as e:
             self.logger.error(f"Fallo al leer CPU: {e}")
-            cpu_pct = 0.0
+            cpu_pct = None  # ¡Cambio!
 
         # 2. RAM
         try:
@@ -79,12 +79,12 @@ class MessageRouter:
             ram_pct = mem.percent
         except Exception as e:
             self.logger.error(f"Fallo al leer RAM: {e}")
-            ram_used_gb = 0.0
-            ram_total_gb = 0.0
-            ram_pct = 0.0
+            ram_used_gb = None
+            ram_total_gb = None
+            ram_pct = None
 
         # 3. Temperatura
-        temp_c = 0.0
+        temp_c = None # Empezamos asumiendo que es nulo
         try:
             temps = psutil.sensors_temperatures()
             if temps:
@@ -95,33 +95,35 @@ class MessageRouter:
         except Exception as e:
             self.logger.warning(f"Fallo al leer Sensores de Temperatura: {e}")
 
-        # 4. Red ROS 2 (Esto usa el SO, casi nunca falla)
+        # 4. Red ROS 2
         try:
-            ros_distro = os.environ.get('ROS_DISTRO', 'Desconocida')
-            domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
-            current_dds = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+            ros_distro = os.environ.get('ROS_DISTRO', None)
+            domain_id = os.environ.get('ROS_DOMAIN_ID', None)
+            current_dds = os.environ.get('RMW_IMPLEMENTATION', None)
 
-            # ¡NUEVO! Comprobamos si el robot tiene el Discovery configurado
             discovery_server = os.environ.get('ROS_DISCOVERY_SERVER', '')
             use_discovery = True if discovery_server else False
 
-            base_path = f"/opt/ros/{ros_distro}/share"
-            rmws = []
-            if os.path.exists(base_path):
-                for folder in os.listdir(base_path):
-                    if folder.startswith('rmw_') and folder.endswith('_cpp') and "implementation" not in folder:
-                        rmws.append(folder)
-            
-            if not rmws:
-                rmws = ["rmw_fastrtps_cpp"]
+            # ¡LA SOLUCIÓN! Declaramos explícitamente que es una lista de strings o nulo
+            rmws: Optional[List[str]] = None
+            if ros_distro:
+                base_path = f"/opt/ros/{ros_distro}/share"
+                if os.path.exists(base_path):
+                    rmws = []
+                    for folder in os.listdir(base_path):
+                        if folder.startswith('rmw_') and folder.endswith('_cpp') and "implementation" not in folder:
+                            rmws.append(folder)
+                    if not rmws:
+                        rmws = None
+
         except Exception as e:
             self.logger.error(f"Fallo leyendo el entorno ROS: {e}")
-            ros_distro = "Error"
-            domain_id = "0"
-            current_dds = "Error"
-            rmws = ["Error"]
+            ros_distro = None
+            domain_id = None
+            current_dds = None
+            rmws = None
+            use_discovery = None
 
-        # Devolvemos siempre un diccionario con todas las claves, pase lo que pase
         return {
             "cpu_pct": cpu_pct,
             "ram_used_gb": ram_used_gb,
@@ -132,7 +134,7 @@ class MessageRouter:
             "ros_domain_id": domain_id,
             "current_dds": current_dds,
             "available_dds": rmws,
-            "use_discovery": use_discovery # ¡NUEVO!
+            "use_discovery": use_discovery
         }
 
     def _write_env_file(self, domain_id: str, dds: str, use_discovery: bool) -> bool:

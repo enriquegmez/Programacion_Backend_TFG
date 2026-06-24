@@ -43,9 +43,10 @@ class TiagoBridgeNode(Node):
                                                    topic='web_teleop/cmd_vel_raw', 
                                                    qos_profile=10)
         
-        self.latest_battery_pct = 100.0
-        self.latest_estop_active = False
-        self.latest_is_charging= False
+        # Le decimos explícitamente de qué tipo son usando Optional
+        self.latest_battery_pct: Optional[float] = None 
+        self.latest_estop_active: Optional[bool] = None 
+        self.latest_is_charging: Optional[bool] = None
 
         self.battery_sub: Optional[Subscription] = None
         self.estop_sub: Optional[Subscription] = None
@@ -1144,7 +1145,7 @@ class TiagoBridgeNode(Node):
 
     def get_robot_info(self) -> dict:
         hostname = socket.gethostname()
-        domain_id = os.environ.get("ROS_DOMAIN_ID", "0")
+        domain_id = os.environ.get("ROS_DOMAIN_ID", None)
         
         battery_pct = self.latest_battery_pct
         e_stop_active = self.latest_estop_active

@@ -11,21 +11,22 @@ import time
 import os
 import socket
 import xml.etree.ElementTree as ET # ¡NUEVO! Para leer el URDF (XML)
-from rclpy.timer import Timer
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy # ¡NUEVO! Para leer topics "latched"
-from std_msgs.msg import String # ¡NUEVO! Para el topic /robot_description
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint # ¡NUEVO! Para mover motores
+from std_msgs.msg import Bool, Float32  # type: ignore[import] # Asegúrate de incluir Float32 aquí
+from rclpy.timer import Timer # type: ignore[import]
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, qos_profile_sensor_data # type: ignore[import]
+from std_msgs.msg import String # type: ignore[import] # ¡NUEVO! Para el topic /robot_description
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint # type: ignore[import] # ¡NUEVO! Para mover motores
 from typing import Any, Optional, Callable # <-- ¡NUEVO! Importamos Callable
 from rclpy.node import Node  # type: ignore[import]
 from geometry_msgs.msg import Twist # type: ignore[import]
 from rclpy.executors import SingleThreadedExecutor # type: ignore[import]
 from rclpy.action import ActionClient, CancelResponse # type: ignore[import]
-from sensor_msgs.msg import BatteryState, JointState, LaserScan, Imu, Range, PointCloud2, NavSatFix, Temperature # ¡Añadidos NavSatFix y Temperature! # type: ignore[import]
-from nav_msgs.msg import Odometry # ¡NUEVO!
+from sensor_msgs.msg import BatteryState, JointState, LaserScan, Imu, Range, PointCloud2, NavSatFix, Temperature, Image # type: ignore[import] # ¡Añadidos NavSatFix y Temperature! # type: ignore[import]
+from nav_msgs.msg import Odometry # type: ignore[import] # ¡NUEVO!
 from geometry_msgs.msg import WrenchStamped # ¡NUEVO! # type: ignore[import] 
 from std_msgs.msg import Bool # type: ignore[import]
-from rclpy.client import Client
-from rclpy.subscription import Subscription
+from rclpy.client import Client # type: ignore[import]
+from rclpy.subscription import Subscription # type: ignore[import]
 
 from play_motion2_msgs.action import PlayMotion2 # type: ignore[import]
 from play_motion2_msgs.srv import GetMotionInfo, ListMotions # type: ignore[import]
@@ -45,7 +46,7 @@ class TiagoBridgeNode(Node):
         
         # Le decimos explícitamente de qué tipo son usando Optional
         self.latest_battery_pct: Optional[float] = None 
-        self.latest_estop_active: Optional[bool] = None 
+        self.latest_estop_active: Optional[bool] = False
         self.latest_is_charging: Optional[bool] = None
 
         self.battery_sub: Optional[Subscription] = None
@@ -116,10 +117,28 @@ class TiagoBridgeNode(Node):
 
         self.is_connected = False
         self.is_control_active = False
+        
+        # ==========================================
+        # ¡NUEVO! MEGA-PUENTE QoS PARA LAS 3 CÁMARAS
+        # ==========================================
+        # 1. Creamos los publicadores RELIABLE (qos=10) para engañar al web_video_server
+        self.rgb_relay_pub = self.create_publisher(Image, '/camera/rgb/relay', 10)
+        self.ir_relay_pub = self.create_publisher(Image, '/camera/ir/relay', 10)
+        self.depth_relay_pub = self.create_publisher(Image, '/camera/depth/relay', 10)
+        
+        # 2. Nos suscribimos a las cámaras reales usando BEST_EFFORT (qos_profile_sensor_data)
+        self.rgb_sub = self.create_subscription(
+            Image, '/head_front_camera/rgb/image_raw', self._rgb_relay_callback, qos_profile_sensor_data)
+            
+        self.ir_sub = self.create_subscription(
+            Image, '/head_front_camera/ir/image_raw', self._ir_relay_callback, qos_profile_sensor_data)
+            
+        self.depth_sub = self.create_subscription(
+            Image, '/head_front_camera/depth/image_raw', self._depth_relay_callback, qos_profile_sensor_data)
 
          # --- INICIO PRUEBA ---
 
-        #self.latest_battery_pct = 100.0
+        self.latest_battery_pct = 67.0
 
         #self.latest_is_charging = False
 
@@ -141,35 +160,35 @@ class TiagoBridgeNode(Node):
 
         # 1. Bajar 1% cada 5 segundos
 
-        # if self.latest_battery_pct > 0:
+        #if self.latest_battery_pct > 0:
 
-            # self.latest_battery_pct -= 1.0
+            #self.latest_battery_pct -= 1.0
 
         # 2. Comprobar si ha pasado 1 minuto (60 segundos)
 
-        # tiempo_pasado = time.time() - self.test_start_time
+        #tiempo_pasado = time.time() - self.test_start_time
 
-#       if tiempo_pasado >= 20.0:
+        #if tiempo_pasado >= 20.0:
 
-#           self.latest_is_charging = True
+            #self.latest_is_charging = True
 
             # # Aquí forzamos el cambio de capacidades tras el minuto
 
             # # Necesitamos pasárselo a get_robot_info
 
-            # self.latest_has_ft_sensor = True
+            #self.latest_has_ft_sensor = True
 
-            # self.latest_has_play_motion = True
+            #self.latest_has_play_motion = True
 
-            # self.latest_has_base = False
+            #self.latest_has_base = False
 
-        # else:
+        #else:
 
-            # self.latest_has_ft_sensor = False
+            #self.latest_has_ft_sensor = False
 
-            # self.latest_has_play_motion = False
+            #self.latest_has_play_motion = False
 
-            # self.latest_has_base = True
+            #self.latest_has_base = True
 
         # --- FIN PRUEBA --- 
 
@@ -183,35 +202,60 @@ class TiagoBridgeNode(Node):
         topics_and_types = self.get_topic_names_and_types()
 
         for name, types in topics_and_types:
-            if self.battery_sub is None and 'sensor_msgs/msg/BatteryState' in types:
-                self.logger.info(f"¡Topic de Batería auto-descubierto en: {name}!")
-                self.battery_sub = self.create_subscription(BatteryState, name, self._battery_callback, 10)
+            # 1. BATERÍA: Detecta Float32 en /power/battery_level
+            if self.battery_sub is None and '/power/battery_level' in name and 'std_msgs/msg/Float32' in types:
+                self.logger.info(f"✅ Sintonizando Batería en: {name}")
+                self.battery_sub = self.create_subscription(Float32, name, self._battery_float_callback, qos_profile_sensor_data)
                 
-            if self.estop_sub is None and 'std_msgs/msg/Bool' in types:
-                if 'estop' in name.lower() or 'emergency' in name.lower():
-                    self.logger.info(f"¡Topic de E-Stop auto-descubierto en: {name}!")
-                    self.estop_sub = self.create_subscription(Bool, name, self._estop_callback, 10)
-
-            if self.charging_sub is None and 'std_msgs/msg/Bool' in types:
-                if 'charge' in name.lower() or 'charging' in name.lower():
-                    self.logger.info(f"¡Topic de Carga auto-descubierto en: {name}!")
-                    self.charging_sub = self.create_subscription(Bool, name, self._charging_callback, 10)
+            # 2. E-STOP: Suscripción robusta
+            if self.estop_sub is None and '/power/is_emergency' in name:
+                self.logger.info(f"✅ Sintonizando E-Stop en: {name}")
+                
+                # Creamos una política QoS muy permisiva que acepta casi cualquier configuración del publicador
+                qos_permisiva = QoSProfile(
+                    depth=1,
+                    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL, # Muy importante para estados (Latch)
+                    reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT # Acepta Best Effort
+                )
+                
+                self.estop_sub = self.create_subscription(
+                    Bool, 
+                    name, 
+                    self._estop_callback, 
+                    qos_permisiva
+                )
+            # 3. CARGA: Detecta Bool en /power/is_charging
+            if self.charging_sub is None and '/power/is_charging' in name and 'std_msgs/msg/Bool' in types:
+                self.logger.info(f"✅ Sintonizando Carga en: {name}")
+                self.charging_sub = self.create_subscription(Bool, name, self._charging_callback, qos_profile_sensor_data)
             
             # ==========================================
-            # ¡NUEVO! Auto-descubrimiento del Escudo Anticolisión
+            # ¡NUEVO! Auto-descubrimiento del Escudo Anticolisión (Bridge)
             # ==========================================
-            if 'sensor_msgs/msg/LaserScan' in types:
-                if name not in self.safety_lidar_topics:
-                    self.safety_lidar_topics.add(name)
+            
+            # =========================================================================
+            # ¡INTERRUPTOR: MODO ROBOT REAL VS MODO SIMULADOR!
+            # =========================================================================
+            # Descomenta la línea que necesites según dónde estés ejecutando el backend.
+            
+            # OPCIÓN A) PARA EL ROBOT REAL (Ignora los "_raw" para no verse a sí mismo)
+            es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.safety_lidar_topics and 'raw' not in name.lower()
+            
+            # OPCIÓN B) PARA EL SIMULADOR GAZEBO (Lee todos los láseres)
+            # es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.safety_lidar_topics
+            # =========================================================================
+
+            if es_lidar_valido:
+                self.safety_lidar_topics.add(name)
+                
+                # Fábrica para saber de qué topic viene la alerta
+                def make_safety_callback(t_name: str) -> Callable[[LaserScan], None]:
+                    def cb(msg: LaserScan) -> None:
+                        self._safety_lidar_callback(t_name, msg)
+                    return cb
                     
-                    # Fábrica para saber de qué topic viene la alerta
-                    def make_safety_callback(t_name: str) -> Callable[[LaserScan], None]:
-                        def cb(msg: LaserScan) -> None:
-                            self._safety_lidar_callback(t_name, msg)
-                        return cb
-                        
-                    self.create_subscription(LaserScan, name, make_safety_callback(name), QoSProfile(depth=1))
-                    self.logger.info(f"🛡️ Escudo Anticolisión activado en segundo plano: {name}")
+                self.create_subscription(LaserScan, name, make_safety_callback(name), qos_profile_sensor_data)
+                self.logger.info(f"🛡️ Escudo Anticolisión (Lógica) activado en sensor limpio: {name}")
 
             # ¡NUEVO! Detectar controladores de articulaciones universalmente
             if 'trajectory_msgs/msg/JointTrajectory' in types:
@@ -222,7 +266,6 @@ class TiagoBridgeNode(Node):
                     
                     # Lanzamos un hilo rápido para que le pregunte a ROS 2 sin bloquear el servidor
                     threading.Thread(target=self._resolve_controller_joints, args=(name,), daemon=True).start()
-    
     def _resolve_controller_joints(self, topic_name: str):
         """Usa comandos de terminal en 2º plano para preguntarle a ROS 2 qué motores posee este controlador."""
         import subprocess
@@ -252,7 +295,7 @@ class TiagoBridgeNode(Node):
         try:
             res = subprocess.check_output(
                 ['ros2', 'param', 'get', '/controller_manager', f'{controller_name}.joints'],
-                text=True, timeout=3.0, stderr=subprocess.DEVNULL
+                text=True, timeout=10.0, stderr=subprocess.DEVNULL # <--- CAMBIADO A 10.0s
             )
             joints_list = extract_joints(res)
         except Exception:
@@ -263,7 +306,7 @@ class TiagoBridgeNode(Node):
             try:
                 res = subprocess.check_output(
                     ['ros2', 'param', 'get', f'/{controller_name}', 'joints'],
-                    text=True, timeout=3.0, stderr=subprocess.DEVNULL
+                    text=True, timeout=10.0, stderr=subprocess.DEVNULL # <--- CAMBIADO A 10.0s
                 )
                 joints_list = extract_joints(res)
             except Exception:
@@ -272,15 +315,28 @@ class TiagoBridgeNode(Node):
         if joints_list:
             self.dynamic_controllers[topic_name] = joints_list
             self.logger.info(f"🤖 Controlador Universal detectado: '{topic_name}' maneja {len(joints_list)} motores.")
-    
-    def _battery_callback(self, msg: BatteryState):
-        if msg.percentage <= 1.0:
-            self.latest_battery_pct = float(msg.percentage * 100.0)
         else:
-            self.latest_battery_pct = float(msg.percentage)
-
+            # ¡NUEVO! Si falla por tiempo, lo quitamos de la lista para que 
+            # el sistema lo vuelva a intentar detectar en el siguiente ciclo.
+            if topic_name in self._visited_controllers:
+                self._visited_controllers.remove(topic_name)
+    def _battery_float_callback(self, msg: Float32):
+        # El mensaje es un número simple de 0 a 100
+        self.latest_battery_pct = float(msg.data)
+        # self.logger.info(f"DEBUG: Batería recibida: {self.latest_battery_pct}%") # Descomenta si quieres verificar
+    
     def _charging_callback(self, msg: Bool):
         self.latest_is_charging = msg.data
+
+    def _rgb_relay_callback(self, msg: Image):
+        self.rgb_relay_pub.publish(msg)
+
+    def _ir_relay_callback(self, msg: Image):
+        self.ir_relay_pub.publish(msg)
+
+    def _depth_relay_callback(self, msg: Image):
+        # Aviso: El mapa de profundidad se ve gris/oscuro porque codifica milímetros en píxeles
+        self.depth_relay_pub.publish(msg)
 
     def _estop_callback(self, msg: Bool):
         self.latest_estop_active = msg.data
@@ -318,17 +374,27 @@ class TiagoBridgeNode(Node):
         except Exception as e:
             self.logger.error(f"Error parseando el URDF del robot: {e}")
 
+    def _get_fully_qualified_nodes(self) -> list[str]:
+        """Devuelve los nombres de los nodos con su namespace (igual que ros2 node list)"""
+        nodos_brutos = self.get_node_names_and_namespaces()
+        nodos_activos = []
+        for name, ns in nodos_brutos:
+            # Aseguramos formato limpio (ej: /head_controller/incrementer)
+            fqn = f"{ns}/{name}".replace('//', '/')
+            nodos_activos.append(fqn)
+        return nodos_activos
+    
     def connect(self) -> int:
-        nodos_activos = self.get_node_names()
-        nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter', 'web_video_server']
+        nodos_activos = self._get_fully_qualified_nodes()
+        nodos_nuestros = ['/app_tiago_bridge', '/app_safety_filter', '/web_video_server']
         
         nodos_robot = [
             nodo for nodo in nodos_activos 
             if nodo not in nodos_nuestros 
-            and not nodo.startswith('ros2cli') 
-            and not nodo.startswith('_ros2cli') 
-            and not nodo.startswith('launch') 
-            and not nodo.startswith('daemon')
+            and not nodo.startswith('/ros2cli') 
+            and not nodo.startswith('/_ros2cli') 
+            and not nodo.startswith('/launch') 
+            and not nodo.startswith('/daemon')
         ]
         
         if len(nodos_robot) == 0:
@@ -389,16 +455,16 @@ class TiagoBridgeNode(Node):
         if not self.is_connected:
             return 0
             
-        nodos_activos = self.get_node_names()
-        nodos_nuestros = ['app_tiago_bridge', 'app_safety_filter', 'web_video_server']
+        nodos_activos = self._get_fully_qualified_nodes()
+        nodos_nuestros = ['/app_tiago_bridge', '/app_safety_filter', '/web_video_server']
         
         nodos_robot = [
             nodo for nodo in nodos_activos 
             if nodo not in nodos_nuestros 
-            and not nodo.startswith('ros2cli') 
-            and not nodo.startswith('_ros2cli') 
-            and not nodo.startswith('launch') 
-            and not nodo.startswith('daemon')
+            and not nodo.startswith('/ros2cli') 
+            and not nodo.startswith('/_ros2cli') 
+            and not nodo.startswith('/launch') 
+            and not nodo.startswith('/daemon')
         ]
         
         if len(nodos_robot) == 0:
@@ -409,7 +475,7 @@ class TiagoBridgeNode(Node):
             self.logger.error("Conexión rechazada: Múltiples robots detectados (Choque de nodos en red).")
             return 2
             
-        return 1 
+        return 1
     
     def is_topic_active(self, topic_name: str) -> bool:
         clean_topic = topic_name.strip()
@@ -422,8 +488,8 @@ class TiagoBridgeNode(Node):
 
     def check_video_server_silently(self) -> bool:
         try:
-            nodos_activos = self.get_node_names()
-            return 'web_video_server' in nodos_activos
+            nodos_activos = self._get_fully_qualified_nodes()
+            return '/web_video_server' in nodos_activos
         except Exception as e:
             self.logger.error(f"Error buscando el servidor de vídeo: {e}")
             return False
@@ -507,6 +573,7 @@ class TiagoBridgeNode(Node):
             self.logger.debug(f"Freno omitido: {e}")
 
     #FUNCION PARA MOVER ARTICULACIONES EN TIEMPO REAL (BARRA DESLIZADORA)
+    #FUNCION PARA MOVER ARTICULACIONES EN TIEMPO REAL (BARRA DESLIZADORA)
     def publish_joint_position(self, joint_name: str, value: float) -> bool:
         if not self.is_connected or not self.is_control_active:
             return False
@@ -531,8 +598,11 @@ class TiagoBridgeNode(Node):
                 break
                 
         if not target_topic:
-            self.logger.warning(f"Aún no he descubierto a qué controlador pertenece: {joint_name}")
-            return False
+            self.logger.warning(f"Aún no he descubierto a qué controlador pertenece: {joint_name} (Ignorando comando sin desconectar...)")
+            # ¡CAMBIO CRÍTICO! Devolvemos True en lugar de False.
+            # Así ignoramos el movimiento temporalmente, pero evitamos que el "Watchdog" de la app 
+            # se asuste y te desconecte de golpe.
+            return True
 
         if target_topic not in self.joint_publishers:
             self.joint_publishers[target_topic] = self.create_publisher(JointTrajectory, target_topic, 10)
@@ -897,7 +967,7 @@ class TiagoBridgeNode(Node):
     def get_camera_topics(self) -> list[str]:
         topics_and_types = self.get_topic_names_and_types()
         camera_topics: list[str] = []
-        exclude_keywords = ['depth', 'disparity', 'mask', 'segmentation', 'semantic', 'instance', 'optical_flow', 'stereo']
+        exclude_keywords = ['disparity', 'mask', 'segmentation', 'semantic', 'instance', 'optical_flow', 'stereo']
         priority_keywords = ['camera', 'image_raw', 'rgb', 'color', 'front', 'main']
 
         def _camera_priority(topic_name: str) -> int:
@@ -998,24 +1068,24 @@ class TiagoBridgeNode(Node):
         sub = None
         # Según el tipo, usamos nuestra fábrica para crear el callback perfecto
         if topic_type == RosMsgTypes.LASER_SCAN:
-            sub = self.create_subscription(LaserScan, topic, make_callback(topic, "LaserScan"), 10)
+            sub = self.create_subscription(LaserScan, topic, make_callback(topic, "LaserScan"), qos_profile_sensor_data)
         elif topic_type == RosMsgTypes.IMU:
-            sub = self.create_subscription(Imu, topic, make_callback(topic, "Imu"), 10)
+            sub = self.create_subscription(Imu, topic, make_callback(topic, "Imu"), qos_profile_sensor_data)
         elif topic_type == RosMsgTypes.BATTERY:
-            sub = self.create_subscription(BatteryState, topic, make_callback(topic, "BatteryState"), 10)
+            sub = self.create_subscription(BatteryState, topic, make_callback(topic, "BatteryState"), qos_profile_sensor_data)
         elif topic_type == RosMsgTypes.RANGE:
-            sub = self.create_subscription(Range, topic, make_callback(topic, "Range"), 10)
+            sub = self.create_subscription(Range, topic, make_callback(topic, "Range"), qos_profile_sensor_data)
         elif topic_type == RosMsgTypes.POINT_CLOUD2:
-            sub = self.create_subscription(PointCloud2, topic, make_callback(topic, "PointCloud2"), 10)
+            sub = self.create_subscription(PointCloud2, topic, make_callback(topic, "PointCloud2"), qos_profile_sensor_data)
         # --- ¡LOS NUEVOS! ---
         elif topic_type == RosMsgTypes.ODOMETRY:
-            sub = self.create_subscription(Odometry, topic, make_callback(topic, "Odometry"), 10)
+            sub = self.create_subscription(Odometry, topic, make_callback(topic, "Odometry"), qos_profile_sensor_data)
         elif topic_type == RosMsgTypes.NAV:
-            sub = self.create_subscription(NavSatFix, topic, make_callback(topic, "NavSatFix"), 10)
+            sub = self.create_subscription(NavSatFix, topic, make_callback(topic, "NavSatFix"), qos_profile_sensor_data)
         elif topic_type == RosMsgTypes.WRENCH:
-            sub = self.create_subscription(WrenchStamped, topic, make_callback(topic, "Wrench"), 10)
+            sub = self.create_subscription(WrenchStamped, topic, make_callback(topic, "Wrench"), qos_profile_sensor_data)
         elif topic_type == RosMsgTypes.TEMPERATURE:
-            sub = self.create_subscription(Temperature, topic, make_callback(topic, "Temperature"), 10)
+            sub = self.create_subscription(Temperature, topic, make_callback(topic, "Temperature"), qos_profile_sensor_data)
         else:
             self.logger.error(f"Tipo de sensor no soportado: {topic_type}")
             return False
@@ -1247,7 +1317,7 @@ class TiagoBridgeNode(Node):
         
         #self.logger.info(f"ENVIANDO LÍMITES AL MÓVIL: {updated_joint_limits}")
 
-         #has_base=False
+        #has_base=False
 
         #cameras_list=[]
 

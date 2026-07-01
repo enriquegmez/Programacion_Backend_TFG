@@ -9,7 +9,7 @@ import logging
 import time
 import socket
 import os         # ¡NUEVO! Para leer variables de entorno
-import psutil     # ¡NUEVO! Para la telemetría del PC (Acuérdate de hacer pip install psutil) 
+import psutil     # type: ignore[import] # ¡NUEVO! Para la telemetría del PC (Acuérdate de hacer pip install psutil) 
 import subprocess # ¡Añade esto arriba del todo en tus imports!
 from typing import cast, Any, Optional, List
 from app_tiago.utils.constants import MsgType, Action, StatusCode, RespType, Resource
@@ -84,16 +84,27 @@ class MessageRouter:
             ram_pct = None
 
         # 3. Temperatura
-        temp_c = None # Empezamos asumiendo que es nulo
-        try:
-            temps = psutil.sensors_temperatures()
-            if temps:
-                for name, entries in temps.items():
-                    if entries:
-                        temp_c = entries[0].current
+        temps = psutil.sensors_temperatures()
+        temp_c = None
+
+        # Sensores habituales de CPU
+        for chip in ("coretemp", "k10temp"):
+            if chip in temps:
+                # Preferir la temperatura del paquete/Tctl/Tdie
+                for sensor in temps[chip]:
+                    if sensor.label in ("Package id 0", "Tctl", "Tdie"):
+                        temp_c = sensor.current
                         break
-        except Exception as e:
-            self.logger.warning(f"Fallo al leer Sensores de Temperatura: {e}")
+                if temp_c is None and temps[chip]:
+                    temp_c = temps[chip][0].current
+                break
+
+        # Respaldo: primer sensor disponible
+        if temp_c is None:
+            for entries in temps.values():
+                if entries:
+                    temp_c = entries[0].current
+                    break
 
         # 4. Red ROS 2
         try:
@@ -211,28 +222,25 @@ WantedBy=default.target
             return False
 
     async def _execute_power_command(self, action: str):
-        """Usa DBus para mandar la orden al SO y captura errores para depuración."""
+        """Usa systemctl con sudo para mandar la orden al SO."""
         await asyncio.sleep(1.0)
         self.logger.critical(f"¡EJECUTANDO COMANDO DE ENERGÍA: {action.upper()}!")
         
         try:
-            # Seleccionamos el comando exacto
-            dbus_method = "Reboot" if action == Action.REBOOT else "PowerOff"
-            cmd = [
-                "dbus-send", "--system", "--print-reply", 
-                "--dest=org.freedesktop.login1", "/org/freedesktop/login1", 
-                f"org.freedesktop.login1.Manager.{dbus_method}", "boolean:true"
-            ]
+            # Seleccionamos el comando directo y limpio de Linux
+            if action == Action.REBOOT:
+                cmd = ["sudo", "systemctl", "reboot"]
+            else:
+                cmd = ["sudo", "systemctl", "poweroff"]
             
-            # Ejecutamos el comando y capturamos la salida de Linux
+            # Ejecutamos el comando
             result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode != 0:
-                # ¡AQUÍ ESTÁ EL CHIVATO! Si Linux rechaza el apagado, lo verás en la consola
                 self.logger.error(f"❌ FALLO CRÍTICO DE ENERGÍA: Linux rechazó el comando.")
                 self.logger.error(f"Motivo (stderr): {result.stderr.strip()}")
             else:
-                self.logger.info("✅ Comando de energía aceptado por el Sistema Operativo.")
+                self.logger.info("✅ Comando de energía aceptado. El robot se apagará/reiniciará en segundos.")
                 
         except Exception as e:
             self.logger.error(f"❌ Excepción interna al intentar ejecutar comando de energía: {e}")
@@ -406,10 +414,30 @@ WantedBy=default.target
                             )
 
                     # ¡NUEVO! Comandos de Lobby (Energía)
+                    # ¡NUEVO! Comandos de Lobby (Energía)
                     case Action.REBOOT | Action.SHUTDOWN:
-                        resp_payload = GenericRespPayload(success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP)
-                        # Lanzamos la orden mortal como una tarea asíncrona para que no bloquee este return
-                        asyncio.create_task(self._execute_power_command(action))                    
+                        self.logger.info(f"Iniciando secuencia de apagado seguro: {action}...")
+                        
+                        # 1. Dormimos al perro guardián
+                        self.is_monitoring = False
+                        if self.monitor_task:
+                            self.monitor_task.cancel()
+                            
+                        # 2. Frenamos ruedas, paramos acciones y cortamos sensores en ROS 2
+                        if self.ros_node:
+                            try:
+                                self.ros_node.stop_robot()
+                                self.ros_node.disconnect_from_robot()
+                            except Exception as e:
+                                self.logger.warning(f"Aviso al limpiar ROS 2 antes de apagar: {e}")
+                        
+                        # 3. Respondemos al móvil (El túnel se cerrará automáticamente al final de la función)
+                        resp_payload = GenericRespPayload(
+                            success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
+                        )
+                        
+                        # 4. Lanzamos la orden mortal al Sistema Operativo
+                        asyncio.create_task(self._execute_power_command(action))                   
                     case Action.DISCONNECT:
                         try:
 
@@ -949,8 +977,8 @@ WantedBy=default.target
             resp_msg = RobotMessage(header=resp_header, payload=resp_payload)
 
             # --- ¡AÑADE ESTA LÍNEA AQUÍ! ---
-            if msg_type == MsgType.QUERY_REQ:
-                print(f"\n[CHIVATO PYTHON] Voy a enviar esto al móvil: {resp_payload}\n")
+            #if msg_type == MsgType.QUERY_REQ:
+                #print(f"\n[CHIVATO PYTHON] Voy a enviar esto al móvil: {resp_payload}\n")
             # -------------------------------
             
             # 1. Sincronizamos la máquina de estados con lo que acaba de suceder

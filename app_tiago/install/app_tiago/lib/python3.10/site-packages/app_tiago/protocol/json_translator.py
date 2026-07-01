@@ -16,7 +16,7 @@ from app_tiago.protocol.models import (
     ActionReqPayload, ControlModeReqPayload, ControlReqPayload, ControlData,
     StreamReqPayload, StopStreamReqPayload, AsyncNotifyPayload,
     ProtocolErrorPayload, EmptyPayload, QueryRespPayload,
-    ActionFeedbackPayload, StreamRespPayload, GenericRespPayload
+    ActionFeedbackPayload, StreamRespPayload, GenericRespPayload, StopActionReqPayload
 )
 
 from app_tiago.protocol.validator import ProtocolValidator
@@ -74,7 +74,10 @@ class MessageCodec:
                 payload = CommandReqPayload(**raw_payload)
             elif msg_type == MsgType.QUERY_REQ:
                 payload = QueryReqPayload(**raw_payload)
-            elif msg_type in [MsgType.ACTION_REQ, MsgType.STOP_ACTION_REQ]:
+            elif msg_type == MsgType.ACTION_REQ:
+                payload = ActionReqPayload(**raw_payload)
+            elif msg_type == MsgType.STOP_ACTION_REQ:
+                payload = StopActionReqPayload(**raw_payload)  
                 payload = ActionReqPayload(**raw_payload)
             elif msg_type == MsgType.CONTROL_MODE_REQ:
                 payload = ControlModeReqPayload(**raw_payload)
@@ -95,7 +98,7 @@ class MessageCodec:
                 resp_type = raw_payload.get("resp_type")
                 if resp_type == RespType.QUERY_RESP:
                     payload = QueryRespPayload(**raw_payload)
-                elif resp_type in [RespType.ACTION_FEEDBACK, RespType.STOP_ACTION_FEEDBACK]:
+                elif resp_type in [RespType.ACTION_FEEDBACK]:
                     payload = ActionFeedbackPayload(**raw_payload)
                 elif resp_type == RespType.STREAM_RESP:
                     payload = StreamRespPayload(**raw_payload)

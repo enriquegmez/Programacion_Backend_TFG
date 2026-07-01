@@ -9,6 +9,7 @@ from rclpy.node import Node # type: ignore[import]
 from geometry_msgs.msg import Twist # type: ignore[import]
 from sensor_msgs.msg import LaserScan # type: ignore[import]
 from std_msgs.msg import String # type: ignore[import]
+from rclpy.qos import qos_profile_sensor_data # type: ignore[import]
 import logging
 import math
 
@@ -55,15 +56,28 @@ class SafetyFilterNode(Node):
     def _discover_lidars(self):
         topics_and_types = self.get_topic_names_and_types()
         for name, types in topics_and_types:
-            if 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs:
-                
+            
+            # =========================================================================
+            # ¡INTERRUPTOR: MODO ROBOT REAL VS MODO SIMULADOR!
+            # =========================================================================
+            # Descomenta la línea que necesites según dónde estés ejecutando el backend.
+            
+            # OPCIÓN A) PARA EL ROBOT REAL (Ignora los "_raw" para no verse a sí mismo)
+            es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs and 'raw' not in name.lower()
+            
+            # OPCIÓN B) PARA EL SIMULADOR GAZEBO (Lee todos los láseres)
+            # es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs
+            # =========================================================================
+
+            if es_lidar_valido:
                 # Fábrica para saber de qué LiDAR viene la lectura
                 def make_cb(t_name):
                     return lambda msg: self._lidar_callback(msg, t_name)
 
-                self.lidar_subs[name] = self.create_subscription(LaserScan, name, make_cb(name), 10)
+                # Usamos qos_profile_sensor_data para evitar Warnings de incompatibilidad
+                self.lidar_subs[name] = self.create_subscription(LaserScan, name, make_cb(name), qos_profile_sensor_data)
                 self.lidar_states[name] = {"front": False, "rear": False}
-                self.py_logger.info(f"🛡️ Escudo Anticolisión anclado automáticamente al sensor: {name}")
+                self.py_logger.info(f"🛡️ Escudo Anticolisión anclado automáticamente al sensor limpio: {name}")
 
     def _lidar_callback(self, msg: LaserScan, topic_name: str):
         # Una pequeña ayuda semántica por si el robot tiene sensores montados del revés físicamente
@@ -90,18 +104,29 @@ class SafetyFilterNode(Node):
         self._evaluate_safety()
 
     def _evaluate_safety(self):
-        self.front_blocked = any(state["front"] for state in self.lidar_states.values())
-        self.rear_blocked = any(state["rear"] for state in self.lidar_states.values())
+        # 1. Buscamos qué sensores exactamente están dando la alarma
+        sensores_frente = [name for name, state in self.lidar_states.items() if state["front"]]
+        sensores_atras = [name for name, state in self.lidar_states.items() if state["rear"]]
+
+        self.front_blocked = len(sensores_frente) > 0
+        self.rear_blocked = len(sensores_atras) > 0
 
         # ==========================================
         # ¡EL FRENO PROACTIVO FÍSICO!
-        # Si detectamos obstáculo y la última orden fue ir hacia él, clavamos los frenos.
         # ==========================================
+        # Solo entramos aquí si hay un obstáculo Y además intentamos avanzar hacia él (last_v)
         if (self.front_blocked and self.last_v > 0.0) or (self.rear_blocked and self.last_v < 0.0):
+            
+            # ¡EL CHIVATO SILENCIOSO! Solo imprimimos 1 vez por segundo y SOLO cuando frenamos el joystick
+            import time
+            if not hasattr(self, '_last_print_time') or time.time() - self._last_print_time > 1.0:
+                self.py_logger.warning(f"🛑 BLOQUEO PREVENTIVO | Obstáculo Frente: {sensores_frente} | Atrás: {sensores_atras}")
+                self._last_print_time = time.time()
+
             self.stop_robot()
             self.last_v = 0.0 # Reseteamos para no enviar frenos en bucle infinito
 
-        # Publicamos el estado
+        # Publicamos el estado al móvil
         alert_msg = String()
         if self.front_blocked and self.rear_blocked: alert_msg.data = "BOTH"
         elif self.front_blocked: alert_msg.data = "FRONT"

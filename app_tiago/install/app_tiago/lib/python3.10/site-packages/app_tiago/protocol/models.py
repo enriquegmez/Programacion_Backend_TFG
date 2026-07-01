@@ -35,6 +35,12 @@ class ActionReqPayload:
     type: str          # JOINT, HOME, EXEC_ACTION
     target: str
 
+# --- ¡NUEVO! ---
+@dataclass
+class StopActionReqPayload:
+    type: str          # Debe coincidir con la acción actual (ej. EXEC_ACTION)
+    target: str        # Debe coincidir con el target actual (ej. saludar)
+
 @dataclass
 class ControlModeReqPayload:
     event: str         # START, STOP
@@ -45,7 +51,8 @@ class ControlModeReqPayload:
 class ControlData:
     v: Optional[float] = 0.0
     w: Optional[float] = 0.0
-    joints: List[float] = field(default_factory=list)
+    joint_name: Optional[str] = None
+    joint_value: Optional[float] = None
 
 @dataclass
 class ControlReqPayload:
@@ -60,6 +67,7 @@ class StreamReqPayload:
 @dataclass
 class StopStreamReqPayload:
     resource: str
+    topic: Optional[str] = None # ¡NUEVO! Para poder apagar un sensor específico sin apagar
 
 @dataclass
 class AsyncNotifyPayload:
@@ -90,8 +98,13 @@ class BaseResponsePayload:
 
 @dataclass
 class QueryRespPayload(BaseResponsePayload):
-    """Respuesta específica para QUERY_REQ (añade array de datos)"""
-    data: Optional[List[str]] = None  # Ej: ["/cmd_vel", "/battery_status"]
+    """
+    Respuesta específica para QUERY_REQ.
+    Puede contener una lista de strings (ej. topics), un diccionario complejo (ROBOT_INFO),
+    o una lista de diccionarios (MENÚ DE SENSORES).
+    """
+    # ¡NUEVO! Añadimos List[Dict[str, Any]] a las opciones permitidas
+    data: Optional[Union[List[str], Dict[str, Any], List[Dict[str, Any]]]] = None
 
 @dataclass
 class ActionFeedbackPayload(BaseResponsePayload):
@@ -124,6 +137,7 @@ class RobotMessage:
         CommandReqPayload, 
         QueryReqPayload,
         ActionReqPayload,
+        StopActionReqPayload,
         ControlModeReqPayload, 
         ControlReqPayload, 
         StreamReqPayload,

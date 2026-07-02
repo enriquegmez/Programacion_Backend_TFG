@@ -367,7 +367,7 @@ WantedBy=default.target
                                     # Estado 0: No hay robot
                                     resp_payload = GenericRespPayload(
                                         success=False, code=StatusCode.NOT_FOUND, 
-                                        resp_type=RespType.COMMAND_RESP, details="Robot Tiago no detectado en la red."
+                                        resp_type=RespType.COMMAND_RESP, details="Robot no detectado en la red."
                                     )
                                 elif connection_status == 2:
                                     # Estado 2: Conflicto / Múltiples robots

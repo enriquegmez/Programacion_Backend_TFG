@@ -19,7 +19,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint # type: ig
 from typing import Any, Optional, Callable # <-- ¡NUEVO! Importamos Callable
 from rclpy.node import Node  # type: ignore[import]
 from geometry_msgs.msg import Twist # type: ignore[import]
-from rclpy.executors import SingleThreadedExecutor # type: ignore[import]
+from rclpy.executors import SingleThreadedExecutor, MultiThreadedExecutor # type: ignore[import]
 from rclpy.action import ActionClient, CancelResponse # type: ignore[import]
 from sensor_msgs.msg import BatteryState, JointState, LaserScan, Imu, Range, PointCloud2, NavSatFix, Temperature, Image # type: ignore[import] # ¡Añadidos NavSatFix y Temperature! # type: ignore[import]
 from nav_msgs.msg import Odometry # type: ignore[import] # ¡NUEVO!
@@ -119,22 +119,13 @@ class TiagoBridgeNode(Node):
         self.is_control_active = False
         
         # ==========================================
-        # ¡NUEVO! MEGA-PUENTE QoS PARA LAS 3 CÁMARAS
+        # ¡NUEVO! MEGA-PUENTE QoS PARA CÁMARAS (DINÁMICO)
         # ==========================================
-        # 1. Creamos los publicadores RELIABLE (qos=10) para engañar al web_video_server
+        # 1. Creamos el publicador RELIABLE (qos=10) para engañar al web_video_server
         self.rgb_relay_pub = self.create_publisher(Image, '/camera/rgb/relay', 10)
-        self.ir_relay_pub = self.create_publisher(Image, '/camera/ir/relay', 10)
-        self.depth_relay_pub = self.create_publisher(Image, '/camera/depth/relay', 10)
         
-        # 2. Nos suscribimos a las cámaras reales usando BEST_EFFORT (qos_profile_sensor_data)
-        self.rgb_sub = self.create_subscription(
-            Image, '/head_front_camera/rgb/image_raw', self._rgb_relay_callback, qos_profile_sensor_data)
-            
-        self.ir_sub = self.create_subscription(
-            Image, '/head_front_camera/ir/image_raw', self._ir_relay_callback, qos_profile_sensor_data)
-            
-        self.depth_sub = self.create_subscription(
-            Image, '/head_front_camera/depth/image_raw', self._depth_relay_callback, qos_profile_sensor_data)
+        # 2. Preparamos el hueco para el suscriptor dinámico
+        self.camera_relay_sub: Optional[Subscription] = None
 
          # --- INICIO PRUEBA ---
 
@@ -239,10 +230,10 @@ class TiagoBridgeNode(Node):
             # Descomenta la línea que necesites según dónde estés ejecutando el backend.
             
             # OPCIÓN A) PARA EL ROBOT REAL (Ignora los "_raw" para no verse a sí mismo)
-            es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.safety_lidar_topics and 'raw' not in name.lower()
+            #es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.safety_lidar_topics and 'raw' not in name.lower()
             
             # OPCIÓN B) PARA EL SIMULADOR GAZEBO (Lee todos los láseres)
-            # es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.safety_lidar_topics
+            es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.safety_lidar_topics
             # =========================================================================
 
             if es_lidar_valido:
@@ -266,6 +257,20 @@ class TiagoBridgeNode(Node):
                     
                     # Lanzamos un hilo rápido para que le pregunte a ROS 2 sin bloquear el servidor
                     threading.Thread(target=self._resolve_controller_joints, args=(name,), daemon=True).start()
+            # ==========================================
+            # ¡NUEVO! Auto-descubrimiento de la Cámara para el Relay
+            # ==========================================
+            if self.camera_relay_sub is None and 'sensor_msgs/msg/Image' in types:
+                topic_lower = name.lower()
+                # Buscamos una cámara a color y evitamos engancharnos a nuestro propio relay o cámaras de profundidad
+                if 'relay' not in topic_lower and 'depth' not in topic_lower and 'ir' not in topic_lower:
+                    self.logger.info(f"🎥 Cámara detectada en: {name}. Activando puente QoS.")
+                    self.camera_relay_sub = self.create_subscription(
+                        Image, 
+                        name, 
+                        self._rgb_relay_callback, 
+                        qos_profile_sensor_data
+                    )
     def _resolve_controller_joints(self, topic_name: str):
         """Usa comandos de terminal en 2º plano para preguntarle a ROS 2 qué motores posee este controlador."""
         import subprocess
@@ -330,13 +335,6 @@ class TiagoBridgeNode(Node):
 
     def _rgb_relay_callback(self, msg: Image):
         self.rgb_relay_pub.publish(msg)
-
-    def _ir_relay_callback(self, msg: Image):
-        self.ir_relay_pub.publish(msg)
-
-    def _depth_relay_callback(self, msg: Image):
-        # Aviso: El mapa de profundidad se ve gris/oscuro porque codifica milímetros en píxeles
-        self.depth_relay_pub.publish(msg)
 
     def _estop_callback(self, msg: Bool):
         self.latest_estop_active = msg.data

@@ -63,10 +63,10 @@ class SafetyFilterNode(Node):
             # Descomenta la línea que necesites según dónde estés ejecutando el backend.
             
             # OPCIÓN A) PARA EL ROBOT REAL (Ignora los "_raw" para no verse a sí mismo)
-            es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs and 'raw' not in name.lower()
+            #es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs and 'raw' not in name.lower()
             
             # OPCIÓN B) PARA EL SIMULADOR GAZEBO (Lee todos los láseres)
-            # es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs
+            es_lidar_valido = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs
             # =========================================================================
 
             if es_lidar_valido:

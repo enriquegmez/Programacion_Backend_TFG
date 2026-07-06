@@ -1306,11 +1306,21 @@ class TiagoBridgeNode(Node):
         # ==========================================
         # ¡NUEVO! Sincronización del estado real de los motores
         # ==========================================
+        # 1. Recopilamos todos los motores que SÍ tienen un controlador electrónico asignado
+        motores_activos = set()
+        for joints_list in self.dynamic_controllers.values():
+            motores_activos.update(joints_list)
+
         updated_joint_limits = []
         for limit in self.joint_limits:
             limit_copy = limit.copy()
+            
             # Leemos la posición actual de nuestra memoria (o 0.0 si aún no ha llegado)
             limit_copy["current_value"] = self.current_joint_states.get(limit["name"], 0.0)
+            
+            # 2. Marcamos si tiene motor (True) o si es pasiva/suspensión (False)
+            limit_copy["is_actuated"] = limit["name"] in motores_activos
+            
             updated_joint_limits.append(limit_copy)
         
         #self.logger.info(f"ENVIANDO LÍMITES AL MÓVIL: {updated_joint_limits}")

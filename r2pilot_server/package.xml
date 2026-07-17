@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>r2pilot_server</name>
+  <version>1.0.0</version>
+  <description>Backend asíncrono y puente ROS 2 para el sistema R2Pilot</description>
+  <maintainer email="enriquegmez@correo.ugr.es">Enrique Gómez</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- Dependencias de ejecución (Python y ROS 2) -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>python3-websockets</exec_depend>
+  <exec_depend>python3-jsonschema</exec_depend>
+  <exec_depend>web_video_server</exec_depend>
+
+  <!-- Dependencias de testeo automático -->
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

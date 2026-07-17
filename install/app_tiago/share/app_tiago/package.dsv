@@ -1,6 +1,0 @@
-source;share/app_tiago/hook/pythonpath.ps1
-source;share/app_tiago/hook/pythonpath.dsv
-source;share/app_tiago/hook/pythonpath.sh
-source;share/app_tiago/hook/ament_prefix_path.ps1
-source;share/app_tiago/hook/ament_prefix_path.dsv
-source;share/app_tiago/hook/ament_prefix_path.sh

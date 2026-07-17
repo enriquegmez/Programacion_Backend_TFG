@@ -1,3 +1,0 @@
-[console_scripts]
-server_node = app_tiago.main:entry_point
-

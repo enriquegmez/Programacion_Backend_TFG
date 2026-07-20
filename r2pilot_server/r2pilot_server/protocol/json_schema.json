@@ -93,8 +93,8 @@
               "data": {
                 "type": "object",
                 "properties": {
-                  "v": { "type": "number", "minimum": -0.5, "maximum": 0.5 },
-                  "w": { "type": "number", "minimum": -1.0, "maximum": 1.0 },
+                  "v": { "type": "number", "minimum": -1.0, "maximum": 1.0 },
+                  "w": { "type": "number", "minimum": -2.0, "maximum": 2.0 },
                   "joint_name": {"type": "string"}, 
                   "joint_value": {"type": "number"}  
                 }

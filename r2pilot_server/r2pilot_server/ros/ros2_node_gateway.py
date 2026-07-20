@@ -66,15 +66,18 @@ class R2PilotBridgeNode(Node):
         self.charging_sub: Optional[Subscription] = None
         self.camera_relay_sub: Optional[Subscription] = None
 
+        
+        
+        
         # Suscripción pasiva al alertador del SafetyNode
-        self.create_subscription(String, 'R2Pilot_teleop/safety_alert', lambda m: setattr(self, 'safety_alert', m.data), 10)
+        self.create_subscription(String, 'R2Pilot_teleop/safety_alert', self._safety_alert_callback, 10)
         
         # Monitorización continua de la posición de los motores
         self.create_subscription(JointState, '/joint_states', self._joint_states_callback, 10)
         
         # Descubrimiento del modelo URDF (Lectura única transitoria)
         qos_urdf = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
-        self.create_subscription(String, '/robot_description', lambda m: self.discovery.parse_urdf(m.data), qos_urdf)
+        self.create_subscription(String, '/robot_description', self._urdf_callback, qos_urdf)
 
         # Timer de auto-descubrimiento para tópicos que aparecen dinámicamente
         self.discovery_timer = self.create_timer(SessionTimeout.AUTO_DISCOVERY_TOPICS_INTERVAL, self._discovery_timer_callback)
@@ -94,6 +97,22 @@ class R2PilotBridgeNode(Node):
         for name, pos in zip(msg.name, msg.position):
             self.current_joint_states[name] = pos
 
+    # Añade estos métodos junto a _joint_states_callback
+    def _safety_alert_callback(self, msg: String) -> None:
+        self.safety_alert = msg.data
+
+    def _urdf_callback(self, msg: String) -> None:
+        self.discovery.parse_urdf(msg.data)
+
+    def _battery_callback(self, msg: Float32) -> None:
+        self.latest_battery_pct = float(msg.data)
+
+    def _estop_callback(self, msg: Bool) -> None:
+        self.latest_estop_active = msg.data
+
+    def _charging_callback(self, msg: Bool) -> None:
+        self.latest_is_charging = msg.data
+
     def _discovery_timer_callback(self) -> None:
         """! 
         @brief Bucle de auto-descubrimiento recurrente.
@@ -107,14 +126,14 @@ class R2PilotBridgeNode(Node):
         topics_and_types = self.get_topic_names_and_types()
         for name, types in topics_and_types:
             if self.battery_sub is None and '/power/battery_level' in name and RosMsgTypes.FLOAT32 in types:
-                self.battery_sub = self.create_subscription(Float32, name, lambda m: setattr(self, 'latest_battery_pct', float(m.data)), qos_profile_sensor_data)
+               self.battery_sub = self.create_subscription(Float32, name, self._battery_callback, qos_profile_sensor_data)
                 
             if self.estop_sub is None and '/power/is_emergency' in name:
                 permisive_qos = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL, reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT)
-                self.estop_sub = self.create_subscription(Bool, name, lambda m: setattr(self, 'latest_estop_active', m.data), permisive_qos)
+                self.estop_sub = self.create_subscription(Bool, name, self._estop_callback, permisive_qos)
                 
             if self.charging_sub is None and '/power/is_charging' in name and RosMsgTypes.BOOL in types:
-                self.charging_sub = self.create_subscription(Bool, name, lambda m: setattr(self, 'latest_is_charging', m.data), qos_profile_sensor_data)
+                self.charging_sub = self.create_subscription(Bool, name, self._charging_callback, qos_profile_sensor_data)
             
             if RosMsgTypes.JOINT_TRAJ in types:
                 self.discovery.resolve_controller_joints_async(name)

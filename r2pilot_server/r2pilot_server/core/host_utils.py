@@ -60,6 +60,9 @@ class HostSystemManager:
             cpu_pct = None  
 
         # 2. Estado de memoria RAM (Convertido a Gigabytes)
+        ram_used_gb: Optional[float] = None
+        ram_total_gb: Optional[float] = None
+        ram_pct: Optional[float] = None
         try:
             mem = psutil.virtual_memory()
             ram_used_gb = round(mem.used / (1024**3), 2)

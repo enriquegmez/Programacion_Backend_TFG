@@ -20,7 +20,7 @@ from std_msgs.msg import Bool, Float32, String        # type: ignore[import]
 from sensor_msgs.msg import JointState, Image         # type: ignore[import]
 
 from r2pilot_server.utils.constants import ControlEvent, SessionTimeout, RosMsgTypes
-from r2pilot_server.ros.ros2_core_node import R2PilotSafetyNode
+from r2pilot_server.ros.ros2_core_node import R2PilotSafetyNode # type: ignore[import]
 
 # --- Importación de los 4 Pilares (Managers de Dominio) ---
 from r2pilot_server.ros.ros2_discovery import DiscoveryManager
@@ -138,10 +138,9 @@ class R2PilotBridgeNode(Node):
             if RosMsgTypes.JOINT_TRAJ in types:
                 self.discovery.resolve_controller_joints_async(name)
             
-            if self.camera_relay_sub is None and RosMsgTypes.IMAGE in types:
-                if 'relay' not in name.lower() and 'depth' not in name.lower():
-                    self.camera_relay_sub = self.create_subscription(Image, name, self.rgb_relay_pub.publish, qos_profile_sensor_data)
-
+            #if 'rgb' in name.lower() and 'image_raw' in name.lower():
+             #       self.logger.info(f"[DISCOVERY] Enlazando relay de vídeo al tópico: {name}")
+              #      self.camera_relay_sub = self.create_subscription(Image, name, self.rgb_relay_pub.publish, qos_profile_sensor_data)
     # =========================================================================
     # LÓGICA DE CONEXIÓN Y SUPERVISIÓN DE RED
     # =========================================================================

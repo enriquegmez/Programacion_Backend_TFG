@@ -14,7 +14,7 @@ from sensor_msgs.msg import BatteryState, LaserScan, Imu, Range, PointCloud2, Na
 from nav_msgs.msg import Odometry             # type: ignore[import]
 from geometry_msgs.msg import WrenchStamped   # type: ignore[import]
 
-from r2pilot_server.utils.constants import RosMsgTypes
+from r2pilot_server.utils.constants import RosMsgTypes, SensorConfig
 from r2pilot_server.protocol.models import (  
     Vec3, Quat, Point2D, LaserData, ImuData, BatteryData, RangeData, 
     PointCloudData, OdometryData, NavSatData, WrenchData, TempData, SensorEnvelope
@@ -108,7 +108,13 @@ class SensorManager:
         if not stream_data: return
         
         current_time = time.time()
-        if current_time - stream_data["last_sent"] < 0.1: return
+        
+        # Obtenemos el tiempo de espera dinámico según el tipo de sensor
+        wait_time = SensorConfig.THROTTLE_RATES.get(sensor_type, 0.1)
+        
+        # Si no ha pasado el tiempo mínimo, descartamos el mensaje (Throttling)
+        if current_time - stream_data["last_sent"] < wait_time: return
+        
         stream_data["last_sent"] = current_time
         
         payload_data: Any = None

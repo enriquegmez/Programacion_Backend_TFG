@@ -144,13 +144,32 @@ class HostSystemManager:
         try:
             ros_distro = os.environ.get('ROS_DISTRO', 'humble')
 
-            # 1. Escribimos nuestro archivo de configuración aislado
+            # 1. Definimos las rutas
             env_path = os.path.expanduser('~/.R2Pilot_config.env')
+            
+            # RESOLUCIÓN DE RUTA: Asume que el XML está en la misma carpeta que este script de Python.
+            # Ajusta 'super_client_configuration_file.xml' al nombre exacto de tu archivo.
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            xml_path = os.path.join(base_dir, 'super_client_configuration_file.xml')
+
+            # 2. Escribimos nuestro archivo de configuración aislado
             with open(env_path, 'w') as f:
                 f.write(f"export ROS_DOMAIN_ID={domain_id}\n")
                 f.write(f"export RMW_IMPLEMENTATION={dds}\n")
+                
                 if use_discovery and "fastrtps" in dds.lower():
                     f.write("export ROS_DISCOVERY_SERVER=127.0.0.1:11811\n")
+                    
+                    # Verificamos que el archivo XML existe antes de exportarlo para evitar fallos silenciosos en ROS 2
+                    if os.path.exists(xml_path):
+                        f.write(f"export FASTRTPS_DEFAULT_PROFILES_FILE={xml_path}\n")
+                        self.logger.info(f"[SISTEMA] Perfil Super Client inyectado desde: {xml_path}")
+                    else:
+                        self.logger.warning(f"[SISTEMA] No se encontró el XML de Super Client en: {xml_path}")
+                else:
+                    # Limpieza crítica: Si desactivan el discovery, nos aseguramos de borrar la variable
+                    # para que Fast DDS no intente buscar el XML de un servidor apagado.
+                    f.write("unset FASTRTPS_DEFAULT_PROFILES_FILE\n")
                     
             # 2. Aseguramos el enlace automático en el bashrc para consolas nuevas
             bashrc_path = os.path.expanduser('~/.bashrc')

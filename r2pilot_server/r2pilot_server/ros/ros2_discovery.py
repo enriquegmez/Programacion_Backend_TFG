@@ -60,9 +60,9 @@ class DiscoveryManager:
                         except ValueError:
                             pass
             self.joint_limits = limits
-            self.logger.info(f"📄 [URDF] Parseo completado. {len(limits)} motores detectados.")
+            self.logger.info(f"[URDF] Parseo completado. {len(limits)} motores detectados.")
         except Exception as e:
-            self.logger.error(f"❌ [URDF] Error parseando el URDF del robot: {e}")
+            self.logger.error(f"[URDF] Error parseando el URDF del robot: {e}")
 
     def resolve_controller_joints_async(self, topic_name: str) -> None:
         """!
@@ -127,7 +127,7 @@ class DiscoveryManager:
         # Si encontramos articulaciones, las almacenamos en el diccionario de controladores dinámicos        
         if joints_list:
             self.dynamic_controllers[topic_name] = joints_list
-            self.logger.info(f"🦾 [DISCOVERY] Controlador: '{topic_name}' maneja {len(joints_list)} motores.")
+            self.logger.info(f"[DISCOVERY] Controlador: '{topic_name}' maneja {len(joints_list)} motores.")
         else:
             if topic_name in self._visited_controllers:
                 self._visited_controllers.remove(topic_name)

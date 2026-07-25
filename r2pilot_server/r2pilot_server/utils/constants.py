@@ -222,3 +222,17 @@ class TelemetryKeys:
     CURRENT_DDS = "current_dds"
     AVAILABLE_DDS = "available_dds"
     USE_DISCOVERY = "use_discovery"
+
+class SensorConfig:
+    """! @brief Tiempos mínimos de espera (en segundos) para el throttling de sensores hacia el frontend."""
+    THROTTLE_RATES = {
+        "BatteryState": 1.0,   # 1 Hz  (Cambia muy lento, no requiere más)
+        "Temperature":  1.0,   # 1 Hz  (Igual que la batería)
+        "NavSatFix":    0.5,   # 2 Hz  (El GPS no suele actualizarse muy rápido)
+        "Range":        0.2,   # 5 Hz  (Sensores de ultrasonidos/proximidad)
+        "LaserScan":    0.1,   # 10 Hz (Equilibrio entre fluidez y peso JSON)
+        "Odometry":     0.1,   # 10 Hz (Suficiente para ver al robot en un mapa 2D)
+        "Imu":          0.05,  # 20 Hz (Requiere más fluidez para visualización de cabeceo/balanceo)
+        "Wrench":       0.033, # 30 Hz (Fuerzas y colisiones: interesa máxima inmediatez visual)
+        "PointCloud2":  0.5    # 2 Hz  (Incluso siendo solo metadatos, no hace falta saturar)
+    }

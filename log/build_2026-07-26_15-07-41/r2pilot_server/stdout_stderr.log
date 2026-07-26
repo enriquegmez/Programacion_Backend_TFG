@@ -1,0 +1,110 @@
+running egg_info
+creating ../build/r2pilot_server/r2pilot_server.egg-info
+writing ../build/r2pilot_server/r2pilot_server.egg-info/PKG-INFO
+writing dependency_links to ../build/r2pilot_server/r2pilot_server.egg-info/dependency_links.txt
+writing entry points to ../build/r2pilot_server/r2pilot_server.egg-info/entry_points.txt
+writing requirements to ../build/r2pilot_server/r2pilot_server.egg-info/requires.txt
+writing top-level names to ../build/r2pilot_server/r2pilot_server.egg-info/top_level.txt
+writing manifest file '../build/r2pilot_server/r2pilot_server.egg-info/SOURCES.txt'
+reading manifest file '../build/r2pilot_server/r2pilot_server.egg-info/SOURCES.txt'
+adding license file 'LICENSE'
+writing manifest file '../build/r2pilot_server/r2pilot_server.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/user/backend_r2pilot/src/build/r2pilot_server/build
+creating /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib
+creating /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server
+copying r2pilot_server/__init__.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server
+copying r2pilot_server/main.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server
+creating /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol
+copying r2pilot_server/protocol/message_codec.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol
+copying r2pilot_server/protocol/__init__.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol
+copying r2pilot_server/protocol/models.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol
+copying r2pilot_server/protocol/validator.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol
+creating /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros
+copying r2pilot_server/ros/ros2_control_manager.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros
+copying r2pilot_server/ros/ros2_node_gateway.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros
+copying r2pilot_server/ros/ros2_discovery.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros
+copying r2pilot_server/ros/__init__.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros
+copying r2pilot_server/ros/ros2_action_manager.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros
+copying r2pilot_server/ros/ros2_sensor_manager.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros
+copying r2pilot_server/ros/ros2_safety_node.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros
+creating /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/utils
+copying r2pilot_server/utils/__init__.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/utils
+copying r2pilot_server/utils/constants.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/utils
+creating /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/communication
+copying r2pilot_server/communication/__init__.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/communication
+copying r2pilot_server/communication/connection_manager.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/communication
+copying r2pilot_server/communication/websocket_server.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/communication
+creating /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core
+copying r2pilot_server/core/__init__.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core
+copying r2pilot_server/core/director.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core
+copying r2pilot_server/core/host_utils.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core
+copying r2pilot_server/core/state_machine.py -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core
+copying r2pilot_server/protocol/json_schema.json -> /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol
+running install
+running install_lib
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/__init__.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol/message_codec.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol/__init__.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol/json_schema.json -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol/models.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/protocol/validator.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/main.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros/ros2_control_manager.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros/ros2_node_gateway.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros/ros2_discovery.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros/__init__.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros/ros2_action_manager.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros/ros2_sensor_manager.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/ros/ros2_safety_node.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/utils
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/utils/__init__.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/utils
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/utils/constants.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/utils
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/communication
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/communication/__init__.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/communication
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/communication/connection_manager.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/communication
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/communication/websocket_server.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/communication
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core/__init__.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core/director.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core/host_utils.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core
+copying /home/user/backend_r2pilot/src/build/r2pilot_server/build/lib/r2pilot_server/core/state_machine.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol/message_codec.py to message_codec.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol/models.py to models.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/protocol/validator.py to validator.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/main.py to main.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros/ros2_control_manager.py to ros2_control_manager.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros/ros2_node_gateway.py to ros2_node_gateway.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros/ros2_discovery.py to ros2_discovery.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros/ros2_action_manager.py to ros2_action_manager.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros/ros2_sensor_manager.py to ros2_sensor_manager.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/ros/ros2_safety_node.py to ros2_safety_node.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/utils/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/utils/constants.py to constants.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/communication/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/communication/connection_manager.py to connection_manager.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/communication/websocket_server.py to websocket_server.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core/director.py to director.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core/host_utils.py to host_utils.cpython-310.pyc
+byte-compiling /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server/core/state_machine.py to state_machine.cpython-310.pyc
+running install_data
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/share/ament_index
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/share/ament_index/resource_index
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/share/ament_index/resource_index/packages
+copying resource/r2pilot_server -> /home/user/backend_r2pilot/src/install/r2pilot_server/share/ament_index/resource_index/packages
+copying package.xml -> /home/user/backend_r2pilot/src/install/r2pilot_server/share/r2pilot_server
+creating /home/user/backend_r2pilot/src/install/r2pilot_server/share/r2pilot_server/launch
+copying launch/backend.launch.py -> /home/user/backend_r2pilot/src/install/r2pilot_server/share/r2pilot_server/launch
+running install_egg_info
+Copying ../build/r2pilot_server/r2pilot_server.egg-info to /home/user/backend_r2pilot/src/install/r2pilot_server/lib/python3.10/site-packages/r2pilot_server-1.0.0-py3.10.egg-info
+running install_scripts
+Installing server_node script to /home/user/backend_r2pilot/src/install/r2pilot_server/lib/r2pilot_server
+writing list of installed files to '/home/user/backend_r2pilot/src/build/r2pilot_server/install.log'

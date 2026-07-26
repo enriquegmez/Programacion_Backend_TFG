@@ -55,11 +55,6 @@ class Director:
         self.is_monitoring = False
         self.monitor_task: Optional[asyncio.Task[Any]] = None
 
-        # ---------------------------------------------------------------------
-        # [TFG] CAMBIO 1: Referencia a la tarea asíncrona del Watchdog de Control
-        # ---------------------------------------------------------------------
-        self.control_watchdog_task: Optional[asyncio.Task[Any]] = None
-
     # =========================================================================
     # VIGILANCIA ASÍNCRONA DE ROS 2 (Watchdog)
     # =========================================================================
@@ -101,55 +96,6 @@ class Director:
                     self.state_machine.trigger_session_reset()
                     await self._send_msg(notify_msg, send_callback)
                     break
-
-
-    # -------------------------------------------------------------------------
-    # [TFG] CAMBIO 2: Implementación del Watchdog de Control (Deadman Switch)
-    # -------------------------------------------------------------------------
-    async def _control_watchdog_loop(self) -> None:
-        """!
-        @brief Watchdog de Seguridad de Control (Deadman Switch) [TFG].
-        @details Vigila de forma proactiva que no se produzca un silencio de red durante 
-                 el teleoperado. Frena los motores inmediatamente si no llegan comandos de joystick.
-        """
-        self.logger.info("[SEGURIDAD] Watchdog de Control de baja latencia iniciado (Límite: 0.6s)")
-        try:
-            while self.is_monitoring:
-                await asyncio.sleep(0.1) # Evaluación rápida a 10 Hz
-                
-                if self.last_control_req_arrival > 0:
-                    time_since_last = time.time() - self.last_control_req_arrival
-                    
-                    if time_since_last > 0.6:
-                        # -----------------------------------------------------------
-                        # [TFG] T1: Instante exacto en el que se detecta el silencio
-                        # -----------------------------------------------------------
-                        t1_deadman = time.perf_counter_ns()
-                        self.logger.warning(
-                            f"[SEGURIDAD CRÍTICA] ¡Pérdida de enlace durante el control! "
-                            f"{time_since_last:.2f}s sin recibir comandos. Frenando robot por seguridad."
-                        )
-                        if self.ros_node:
-                            self.ros_node.stop_robot()
-
-                        # -----------------------------------------------------------
-                        # [TFG] T2: Orden de velocidad 0.0 inyectada en el SafetyFilter
-                        # -----------------------------------------------------------
-                        t2_deadman = time.perf_counter_ns()
-                        latencia_ms = (t2_deadman - t1_deadman) / 1_000_000.0
-                        
-                        self.logger.warning(
-                            f"\n==================================================\n"
-                            f"[MÉTRICA TFG - DEADMAN] Tiempo de reacción del freno: {latencia_ms:.4f} ms\n"
-                            f"=================================================="
-                        )
-                        
-                        # Reseteamos para evitar bucle de envíos de parada a ROS 2
-                        self.last_control_req_arrival = 0.0
-                        
-        except asyncio.CancelledError:
-            self.logger.debug("[SEGURIDAD] Watchdog de Control detenido limpiamente.")
-    # -------------------------------------------------------------------------
 
     # =========================================================================
     # PROCESAMIENTO DE MENSAJES 
@@ -266,13 +212,6 @@ class Director:
                                             self._monitor_robot_connection(send_callback, session_id)
                                         )
 
-                                        # -----------------------------------------------------------------
-                                        # [TFG] CAMBIO 3: Arrancar el Watchdog de control al conectarse
-                                        # -----------------------------------------------------------------
-                                        self.control_watchdog_task = asyncio.create_task(
-                                            self._control_watchdog_loop()
-                                        )
-
                                     resp_payload = GenericRespPayload(
                                         success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
                                     )
@@ -298,16 +237,9 @@ class Director:
 
                     case Action.REBOOT | Action.SHUTDOWN:
                         self.logger.info(f"[SISTEMA] Iniciando secuencia de parada controlada para: {action}...")
-                        #self.is_monitoring = False
-                        #if self.monitor_task: self.monitor_task.cancel()
-
-                        # -----------------------------------------------------------------
-                        # [TFG] CAMBIO 4: Cancelar la tarea de seguridad al apagar/reiniciar
-                        # -----------------------------------------------------------------
                         self.is_monitoring = False
                         if self.monitor_task: self.monitor_task.cancel()
-                        if self.control_watchdog_task: self.control_watchdog_task.cancel()
-
+                            
                         if self.ros_node:
                             try:
                                 self.ros_node.stop_robot()
@@ -323,15 +255,8 @@ class Director:
 
                     case Action.DISCONNECT:
                         try:
-                            # -----------------------------------------------------------------
-                            # [TFG] CAMBIO 4: Cancelar la tarea de seguridad al desconectar
-                            # -----------------------------------------------------------------
                             self.is_monitoring = False
                             if self.monitor_task: self.monitor_task.cancel()
-                            if self.control_watchdog_task: self.control_watchdog_task.cancel()
-
-                            #self.is_monitoring = False
-                            #if self.monitor_task: self.monitor_task.cancel()
 
                             if self.ros_node:
                                 self.ros_node.stop_robot()

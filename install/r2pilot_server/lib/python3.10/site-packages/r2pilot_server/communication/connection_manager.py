@@ -200,15 +200,12 @@ class ConnectionManager:
                     )
                     
                     if self.active_websocket:
-                        ws_to_close = self.active_websocket
-                        
-                        # 1. Delegamos el cierre físico (handshake) a una tarea de fondo para QUE NO NOS BLOQUEE
-                        asyncio.create_task(
-                            ws_to_close.close(code=1000, reason="Ping Timeout - Enlace perdido")
+                        # Cerrar el WebSocket fuerza una excepción controlada en el bucle del servidor
+                        # que delegará el frenado y limpieza en la función 'unregister_client'
+                        await self.active_websocket.close(
+                            code=1000, 
+                            reason="Ping Timeout - Enlace de control perdido"
                         )
-                        
-                        # 2. Llamamos a la limpieza y frenado de emergencia ¡INMEDIATAMENTE!
-                        await self.unregister_client(ws_to_close)
                     break
                     
         except asyncio.CancelledError:

@@ -7,6 +7,7 @@
 #  @date 2026
 
 import logging
+import time # [TFG] Importación necesaria para el reloj de alta precisión
 
 from websockets.asyncio.server import serve, ServerConnection
 from websockets.exceptions import ConnectionClosed
@@ -112,8 +113,12 @@ class WebsocketServer:
                 await self.director.handle_raw_message(text_message, send_callback, close_callback)
 
         except ConnectionClosed as e:
+            # [TFG] T1 FÍSICO: La red ha sido cortada físicamente (Cierre esperado/Limpiado por SO)
+            self.connection_manager.t1_emergencia = time.perf_counter_ns()
             self.logger.warning(f"[RED] Cliente desconectado (Cierre físico detectado): {e}")
         except Exception as e:
+            # [TFG] T1 FÍSICO: Fallo crítico repentino de hardware/red
+            self.connection_manager.t1_emergencia = time.perf_counter_ns()
             self.logger.error(f"[RED] Error crítico no controlado en la conexión con {client_ip}: {e}")
         finally:
             # 5. GARANTÍA DE LIMPIEZA (Se ejecuta SIEMPRE, haya fallado o no)

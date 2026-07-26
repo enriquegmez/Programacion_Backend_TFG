@@ -135,6 +135,7 @@ class ControlManager:
             return True # Ignoramos temporalmente sin desconectar el WebSocket
 
         if target_topic not in self.joint_publishers:
+            print(target_topic)
             self.joint_publishers[target_topic] = self.node.create_publisher(JointTrajectory, target_topic, 10)
 
         # 3. Construimos la trama de ROS 2

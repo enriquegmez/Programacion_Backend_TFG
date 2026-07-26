@@ -52,6 +52,9 @@ class ConnectionManager:
         ## Tarea asíncrona dedicada a la monitorización del bucle Watchdog.
         self.watchdog_task: Optional[asyncio.Task[Any]] = None
 
+        # [TFG] Variable temporal para guardar T1 (Detección de fallo)
+        self.t1_emergencia: int = 0
+
     # =========================================================================
     # GESTIÓN DE ENLACE FÍSICO (WebSockets)
     # =========================================================================
@@ -115,12 +118,24 @@ class ConnectionManager:
             self.logger.info("[ESTADO] Transición de vuelta al estado inicial: IDLE")
             self.state_machine.client_connected()
 
-            # 🚨 MECANISMO DE SEGURIDAD: parada automática del robot
+            # MECANISMO DE SEGURIDAD: parada automática del robot
             self.logger.warning(
                 "[EMERGENCIA] ¡MECANISMO DE SEGURIDAD ACTIVADO: parada automática del robot! "
                 "Frenando motores del robot de forma incondicional y cerrando interfaz ROS 2."
             )
             self.ros2_manager.disconnect_from_robot()
+
+            # -----------------------------------------------------------------
+            # [TFG] CÁLCULO DE T2 Y RESULTADO DE LA MÉTRICA
+            # -----------------------------------------------------------------
+            if self.t1_emergencia > 0:
+                t2_emergencia = time.perf_counter_ns()
+                latencia_ms = (t2_emergencia - self.t1_emergencia) / 1_000_000.0
+                self.logger.warning(f"\n==================================================")
+                self.logger.warning(f"[MÉTRICA TFG] Tiempo de reacción de emergencia: {latencia_ms:.4f} ms")
+                self.logger.warning(f"==================================================\n")
+                self.t1_emergencia = 0  # Reseteamos para la siguiente prueba
+            # -----------------------------------------------------------------
 
     # =========================================================================
     # GESTIÓN DE SESIÓN LÓGICA (Autenticación del Protocolo)
@@ -175,6 +190,10 @@ class ConnectionManager:
                 elapsed_time = time.time() - self.last_ping_time
                 
                 if elapsed_time > self.ping_timeout:
+
+                    # [TFG] T1 LÓGICO: El Watchdog acaba de detectar que ha pasado demasiado tiempo
+                    self.t1_emergencia = time.perf_counter_ns()
+                    
                     self.logger.error(
                         f"[VIGILANCIA] ¡PÉRDIDA CRÍTICA DE COBERTURA! "
                         f"Han transcurrido {elapsed_time:.2f}s sin recibir respuesta del móvil (Límite: {self.ping_timeout}s)."

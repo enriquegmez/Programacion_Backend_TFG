@@ -1,4 +1,4 @@
-## @file ros_node_gateway.py
+## @file ros2_node_gateway.py
 #  @brief Enlace principal entre el servidor asíncrono y el ecosistema de ROS 2.
 #  @details Combina los gestores de Descubrimiento, Sensores, Acciones y Control
 #           para realizar las peticiones del servidor.
@@ -20,7 +20,7 @@ from std_msgs.msg import Bool, Float32, String        # type: ignore[import]
 from sensor_msgs.msg import JointState, Image         # type: ignore[import]
 
 from r2pilot_server.utils.constants import ControlEvent, SessionTimeout, RosMsgTypes
-from r2pilot_server.ros.ros2_core_node import R2PilotSafetyNode # type: ignore[import]
+from r2pilot_server.ros.ros2_safety_node import R2PilotSafetyNode # type: ignore[import]
 
 # --- Importación de los 4 Pilares (Managers de Dominio) ---
 from r2pilot_server.ros.ros2_discovery import DiscoveryManager

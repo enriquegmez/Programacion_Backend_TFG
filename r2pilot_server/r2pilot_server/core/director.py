@@ -50,6 +50,7 @@ class Director:
         self.CONTROL_RESP_INTERVAL = SessionTimeout.CONTROL_RESP_INTERVAL
         self.last_control_resp_time = 0.0
         self.last_control_req_arrival = 0.0
+        self.watchdog_triggered = False
 
         # Control del Watchdog de ROS 2
         self.is_monitoring = False
@@ -103,16 +104,14 @@ class Director:
                     break
 
 
-    # -------------------------------------------------------------------------
-    # [TFG] CAMBIO 2: Implementación del Watchdog de Control (Deadman Switch)
-    # -------------------------------------------------------------------------
     async def _control_watchdog_loop(self) -> None:
         """!
         @brief Watchdog de Seguridad de Control (Deadman Switch) [TFG].
-        @details Vigila de forma proactiva que no se produzca un silencio de red durante 
-                 el teleoperado. Frena los motores inmediatamente si no llegan comandos de joystick.
+        @details Nivel 2 de seguridad: Detecta cortes totales de red proactivamente.
+                 Frena el hardware de forma silenciosa a los 1.0s. La sincronización
+                 lógica de estados se delega al filtro reactivo de 0.6s.
         """
-        self.logger.info("[SEGURIDAD] Watchdog de Control de baja latencia iniciado (Límite: 0.6s)")
+        self.logger.info("[SEGURIDAD] Watchdog de Control silencioso iniciado (Límite: 1.0s)")
         try:
             while self.is_monitoring:
                 await asyncio.sleep(0.1) # Evaluación rápida a 10 Hz
@@ -120,36 +119,36 @@ class Director:
                 if self.last_control_req_arrival > 0:
                     time_since_last = time.time() - self.last_control_req_arrival
                     
-                    if time_since_last > 0.6:
-                        # -----------------------------------------------------------
-                        # [TFG] T1: Instante exacto en el que se detecta el silencio
-                        # -----------------------------------------------------------
-                        t1_deadman = time.perf_counter_ns()
-                        self.logger.warning(
-                            f"[SEGURIDAD CRÍTICA] ¡Pérdida de enlace durante el control! "
-                            f"{time_since_last:.2f}s sin recibir comandos. Frenando robot por seguridad."
-                        )
-                        if self.ros_node:
-                            self.ros_node.stop_robot()
-
-                        # -----------------------------------------------------------
-                        # [TFG] T2: Orden de velocidad 0.0 inyectada en el SafetyFilter
-                        # -----------------------------------------------------------
-                        t2_deadman = time.perf_counter_ns()
-                        latencia_ms = (t2_deadman - t1_deadman) / 1_000_000.0
-                        
-                        self.logger.warning(
-                            f"\n==================================================\n"
-                            f"[MÉTRICA TFG - DEADMAN] Tiempo de reacción del freno: {latencia_ms:.4f} ms\n"
-                            f"=================================================="
-                        )
-                        
-                        # Reseteamos para evitar bucle de envíos de parada a ROS 2
-                        self.last_control_req_arrival = 0.0
+                    if time_since_last > 1.0:
+                        # Si es la primera vez que detecta este corte, frena y mide
+                        if not self.watchdog_triggered:
+                            t1_deadman = time.perf_counter_ns()
+                            
+                            self.logger.error(
+                                f"[SEGURIDAD CRÍTICA] Silencio de {time_since_last:.2f}s sin comandos. "
+                                f"Frenando hardware silenciosamente."
+                            )
+                            
+                            if self.ros_node:
+                                self.ros_node.stop_robot()
+                                
+                            t2_deadman = time.perf_counter_ns()
+                            latencia_ms = (t2_deadman - t1_deadman) / 1_000_000.0
+                            
+                            self.logger.warning(
+                                f"\n==================================================\n"
+                                f"[MÉTRICA TFG - DEADMAN] Tiempo de reacción del freno: {latencia_ms:.4f} ms\n"
+                                f"=================================================="
+                            )
+                            
+                            # Levantamos el flag para no repetir esto 10 veces por segundo
+                            self.watchdog_triggered = True
+                            
+                        # CRÍTICO: NO reseteamos last_control_req_arrival. 
+                        # Dejamos que el filtro reactivo vea el tiempo real de desconexión.
                         
         except asyncio.CancelledError:
             self.logger.debug("[SEGURIDAD] Watchdog de Control detenido limpiamente.")
-    # -------------------------------------------------------------------------
 
     # =========================================================================
     # PROCESAMIENTO DE MENSAJES 
@@ -587,6 +586,7 @@ class Director:
                     else:
                         publish_success, publish_error_msg = False, "Backend ROS no disponible."
                     self.last_control_req_arrival = current_time
+                    self.watchdog_triggered = False  # Bajamos el flag
                 
                 # Control de frecuencia de respuesta: Solo enviamos un CONTROL_RESP cada CONTROL_RESP_INTERVAL segundos
                 if not publish_success or (current_time - self.last_control_resp_time >= self.CONTROL_RESP_INTERVAL):

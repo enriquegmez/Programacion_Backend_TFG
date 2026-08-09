@@ -116,7 +116,7 @@ class ConnectionManager:
             # Reseteamos el estado de sesión lógica y notificamos la desconexión física a la FSM
             self.state_machine.trigger_session_reset()
             self.logger.info("[ESTADO] Transición de vuelta al estado inicial: IDLE")
-            self.state_machine.client_connected()
+            self.state_machine.client_disconnected()
 
             # MECANISMO DE SEGURIDAD: parada automática del robot
             self.logger.warning(
@@ -124,18 +124,6 @@ class ConnectionManager:
                 "Frenando motores del robot de forma incondicional y cerrando interfaz ROS 2."
             )
             self.ros2_manager.disconnect_from_robot()
-
-            # -----------------------------------------------------------------
-            # [TFG] CÁLCULO DE T2 Y RESULTADO DE LA MÉTRICA
-            # -----------------------------------------------------------------
-            if self.t1_emergencia > 0:
-                t2_emergencia = time.perf_counter_ns()
-                latencia_ms = (t2_emergencia - self.t1_emergencia) / 1_000_000.0
-                self.logger.warning(f"\n==================================================")
-                self.logger.warning(f"[MÉTRICA TFG] Tiempo de reacción de emergencia: {latencia_ms:.4f} ms")
-                self.logger.warning(f"==================================================\n")
-                self.t1_emergencia = 0  # Reseteamos para la siguiente prueba
-            # -----------------------------------------------------------------
 
     # =========================================================================
     # GESTIÓN DE SESIÓN LÓGICA (Autenticación del Protocolo)
@@ -190,9 +178,6 @@ class ConnectionManager:
                 elapsed_time = time.time() - self.last_ping_time
                 
                 if elapsed_time > self.ping_timeout:
-
-                    # [TFG] T1 LÓGICO: El Watchdog acaba de detectar que ha pasado demasiado tiempo
-                    self.t1_emergencia = time.perf_counter_ns()
                     
                     self.logger.error(
                         f"[VIGILANCIA] ¡PÉRDIDA CRÍTICA DE COBERTURA! "

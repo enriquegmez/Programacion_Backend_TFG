@@ -7,7 +7,6 @@
 #  @date 2026
 
 import logging
-import time # [TFG] Importación necesaria para el reloj de alta precisión
 
 from websockets.asyncio.server import serve, ServerConnection
 from websockets.exceptions import ConnectionClosed
@@ -22,7 +21,7 @@ class WebsocketServer:
     @brief Servidor asíncrono basado en WebSockets.
     @details Gestiona el ciclo de vida de los sockets físicos (Apertura, Recepción en bucle, Cierre)
              y actúa como puente inyector de dependencias (Callbacks de envío) para que las 
-             capas lógicas (Router) no dependan de librerías de red específicas.
+             capas lógicas no dependan de librerías de red específicas.
     """
 
     def __init__(self, connection_manager: ConnectionManager, director: Director) -> None:
@@ -37,7 +36,7 @@ class WebsocketServer:
 
     async def send_message(self, websocket: ServerConnection, message: str) -> None:
         """!
-        @brief Punto único de emisión de red (Salida en embudo).
+        @brief Punto único de emisión de red.
         @details Cualquier otro script de la aplicación que desee enviar datos al cliente 
                  debe pasar obligatoriamente por esta función. Incluye captura segura de excepciones.
         @param websocket El socket físico abierto con el cliente móvil.
@@ -78,7 +77,7 @@ class WebsocketServer:
         async def send_callback(message: str) -> None:
             """!
             @brief Callback inyectable de envío de datos de red.
-            @details Permite a las capas de lógica superior (como el Router) emitir mensajes de vuelta
+            @details Permite a las capas de lógica superior emitir mensajes de vuelta
                      al dispositivo móvil sin tener dependencia directa con el socket de red físico.
             @param message El mensaje previamente serializado que se enviará.
             """
@@ -113,12 +112,8 @@ class WebsocketServer:
                 await self.director.handle_raw_message(text_message, send_callback, close_callback)
 
         except ConnectionClosed as e:
-            # [TFG] T1 FÍSICO: La red ha sido cortada físicamente (Cierre esperado/Limpiado por SO)
-            self.connection_manager.t1_emergencia = time.perf_counter_ns()
             self.logger.warning(f"[RED] Cliente desconectado (Cierre físico detectado): {e}")
         except Exception as e:
-            # [TFG] T1 FÍSICO: Fallo crítico repentino de hardware/red
-            self.connection_manager.t1_emergencia = time.perf_counter_ns()
             self.logger.error(f"[RED] Error crítico no controlado en la conexión con {client_ip}: {e}")
         finally:
             # 5. GARANTÍA DE LIMPIEZA (Se ejecuta SIEMPRE, haya fallado o no)

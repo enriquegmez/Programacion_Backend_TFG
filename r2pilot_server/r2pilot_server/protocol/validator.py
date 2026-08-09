@@ -31,7 +31,7 @@ class ProtocolValidator:
 
     def _load_schema(self) -> Dict[str, Any]:
         """!
-        @brief Carga y parsea el archivo de contrato del protocolo en disco.
+        @brief Carga y procesa el archivo de contrato del protocolo en disco.
         @details Resuelve la ruta de forma relativa a este mismo script, garantizando que 
                  el archivo se encuentre independientemente de si se ejecuta en local, 
                  en un entorno virtual o dentro de un contenedor Docker.

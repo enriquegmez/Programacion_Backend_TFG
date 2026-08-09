@@ -68,8 +68,8 @@ class ProtocolStateMachine:
     
     def can_transition(self, msg: RobotMessage) -> Tuple[bool, int, str]:
         """!
-        @brief Validador semántico preventivo.
-        @details SOLO EVALÚA: Comprueba si el mensaje entrante es legal según las reglas 
+        @brief Validador de mensajes entrantes.
+        @details Comprueba si el mensaje entrante es legal según las reglas 
                  del estado actual. Actúa como un semáforo antes de enviar nada a ROS 2.
                  No modifica ninguna variable interna de estado.
         @param msg El mensaje decodificado recibido del cliente.

@@ -24,7 +24,7 @@ def setup_logging() -> None:
              facilitando la depuración visual del tráfico de red y eventos de ROS 2.
     """
     logging.basicConfig(
-        level=logging.INFO, # Cambiar a DEBUG para trazar los JSON crudos y los PING_REQ
+        level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%H:%M:%S',
         handlers=[logging.StreamHandler(sys.stdout)]
@@ -66,7 +66,7 @@ async def main() -> None:
     except Exception as e:
         logger.critical(f"Error fatal no controlado en la aplicación: {e}")
     finally:
-        # Apagado Controlado (Graceful Shutdown)
+        # Apagado Controlado 
         # Garantiza que el robot aplique el freno de emergencia y libere la memoria RAM
         logger.info("Deteniendo subsistema ROS 2 y limpiando recursos físicos...")
         ros_manager.stop()

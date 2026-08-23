@@ -65,9 +65,6 @@ class R2PilotBridgeNode(Node):
         self.estop_sub: Optional[Subscription] = None
         self.charging_sub: Optional[Subscription] = None
         self.camera_relay_sub: Optional[Subscription] = None
-
-        
-        
         
         # Suscripción pasiva al alertador del SafetyNode
         self.create_subscription(String, 'R2Pilot_teleop/safety_alert', self._safety_alert_callback, 10)

@@ -56,9 +56,6 @@ class Director:
         self.is_monitoring = False
         self.monitor_task: Optional[asyncio.Task[Any]] = None
 
-        # ---------------------------------------------------------------------
-        # [TFG] CAMBIO 1: Referencia a la tarea asíncrona del Watchdog de Control
-        # ---------------------------------------------------------------------
         self.control_watchdog_task: Optional[asyncio.Task[Any]] = None
 
     # =========================================================================
@@ -106,7 +103,7 @@ class Director:
 
     async def _control_watchdog_loop(self) -> None:
         """!
-        @brief Watchdog de Seguridad de Control (Deadman Switch) [TFG].
+        @brief Watchdog de Seguridad de Control (Deadman Switch).
         @details Nivel 2 de seguridad: Detecta cortes totales de red proactivamente.
                  Frena el hardware de forma silenciosa a los 1.0s. La sincronización
                  lógica de estados se delega al filtro reactivo de 0.6s.
@@ -122,7 +119,6 @@ class Director:
                     if time_since_last > 1.0:
                         # Si es la primera vez que detecta este corte, frena y mide
                         if not self.watchdog_triggered:
-                            t1_deadman = time.perf_counter_ns()
                             
                             self.logger.error(
                                 f"[SEGURIDAD CRÍTICA] Silencio de {time_since_last:.2f}s sin comandos. "
@@ -131,21 +127,6 @@ class Director:
                             
                             if self.ros_node:
                                 self.ros_node.stop_robot()
-                                
-                            t2_deadman = time.perf_counter_ns()
-                            latencia_ms = (t2_deadman - t1_deadman) / 1_000_000.0
-                            
-                            self.logger.warning(
-                                f"\n==================================================\n"
-                                f"[MÉTRICA TFG - DEADMAN] Tiempo de reacción del freno: {latencia_ms:.4f} ms\n"
-                                f"=================================================="
-                            )
-                            
-                            # Levantamos el flag para no repetir esto 10 veces por segundo
-                            self.watchdog_triggered = True
-                            
-                        # CRÍTICO: NO reseteamos last_control_req_arrival. 
-                        # Dejamos que el filtro reactivo vea el tiempo real de desconexión.
                         
         except asyncio.CancelledError:
             self.logger.debug("[SEGURIDAD] Watchdog de Control detenido limpiamente.")

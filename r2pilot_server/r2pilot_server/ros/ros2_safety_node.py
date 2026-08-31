@@ -96,10 +96,10 @@ class R2PilotSafetyNode(Node):
             # =================================================================
             
             # OPCIÓN A) PARA EL ROBOT REAL (Ignora los "_raw" para no verse partes de su propio cuerpo)
-            #is_valid_lidar = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs and 'raw' not in name.lower()
+            is_valid_lidar = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs and 'raw' not in name.lower()
             
             # OPCIÓN B) PARA EL SIMULADOR GAZEBO (Lee todos los láseres sin filtro de cuerpo)
-            is_valid_lidar = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs
+            #is_valid_lidar = 'sensor_msgs/msg/LaserScan' in types and name not in self.lidar_subs
             # =================================================================
             
             if is_valid_lidar:

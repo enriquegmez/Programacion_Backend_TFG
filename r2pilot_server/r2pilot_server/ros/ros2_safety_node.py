@@ -1,4 +1,4 @@
-## @file safety_filter.py
+## @file ros2_safety_node.py
 #  @brief Nodo independiente de seguridad y anticolisión de ROS 2.
 #  @details Actúa como un cortafuegos (proxy) entre los comandos de la app web y los
 #           controladores de hardware del robot. Implementa descubrimiento dinámico de 

@@ -246,13 +246,6 @@ class Director:
                                             self._monitor_robot_connection(send_callback, session_id)
                                         )
 
-                                        # -----------------------------------------------------------------
-                                        # [TFG] CAMBIO 3: Arrancar el Watchdog de control al conectarse
-                                        # -----------------------------------------------------------------
-                                        self.control_watchdog_task = asyncio.create_task(
-                                            self._control_watchdog_loop()
-                                        )
-
                                     resp_payload = GenericRespPayload(
                                         success=True, code=StatusCode.OK, resp_type=RespType.COMMAND_RESP
                                     )
@@ -278,15 +271,8 @@ class Director:
 
                     case Action.REBOOT | Action.SHUTDOWN:
                         self.logger.info(f"[SISTEMA] Iniciando secuencia de parada controlada para: {action}...")
-                        #self.is_monitoring = False
-                        #if self.monitor_task: self.monitor_task.cancel()
-
-                        # -----------------------------------------------------------------
-                        # [TFG] CAMBIO 4: Cancelar la tarea de seguridad al apagar/reiniciar
-                        # -----------------------------------------------------------------
                         self.is_monitoring = False
                         if self.monitor_task: self.monitor_task.cancel()
-                        if self.control_watchdog_task: self.control_watchdog_task.cancel()
 
                         if self.ros_node:
                             try:
@@ -303,15 +289,8 @@ class Director:
 
                     case Action.DISCONNECT:
                         try:
-                            # -----------------------------------------------------------------
-                            # [TFG] CAMBIO 4: Cancelar la tarea de seguridad al desconectar
-                            # -----------------------------------------------------------------
                             self.is_monitoring = False
                             if self.monitor_task: self.monitor_task.cancel()
-                            if self.control_watchdog_task: self.control_watchdog_task.cancel()
-
-                            #self.is_monitoring = False
-                            #if self.monitor_task: self.monitor_task.cancel()
 
                             if self.ros_node:
                                 self.ros_node.stop_robot()

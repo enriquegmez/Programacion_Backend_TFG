@@ -46,16 +46,16 @@ async def main() -> None:
     ros_manager.start() # Arranca rclpy y el SafetyFilter en un hilo del SO separado
 
     try:
-        # 2. Instanciar la Máquina de Estados Lógica (Dominio / Semáforo)
+        # 2. Instanciar la Máquina de Estados Lógica 
         state_machine = ProtocolStateMachine()
 
-        # 3. Instanciar el Gestor de Sesiones (Seguridad / Controlador de Acceso)
+        # 3. Instanciar el Gestor de Sesiones 
         connection_manager = ConnectionManager(state_machine, ros2_manager=ros_manager)
 
-        # 4. Instanciar el Director (Enrutador Semántico / Cerebro)
+        # 4. Instanciar el Director 
         director = Director(connection_manager, state_machine, ros_node=ros_manager)
 
-        # 5. Instanciar y arrancar el Servidor WebSocket (Transporte / Cartero)
+        # 5. Instanciar y arrancar el Servidor WebSocket 
         server = WebsocketServer(connection_manager, director)
         
         # Bloqueo asíncrono: El programa se queda aquí procesando los paquetes entrantes

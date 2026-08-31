@@ -27,7 +27,6 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            # Mapeo del binario ejecutable hacia el entry_point de tu main.py
             'server_node = r2pilot_server.main:entry_point'
         ],
     },

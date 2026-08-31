@@ -25,10 +25,8 @@ def generate_launch_description() -> LaunchDescription:
         # Este nodo llama al entry_point definido en el setup.py, levantando
         # tu main.py (WebSockets, FSM, Controllers, etc.)
         Node(
-            package='r2pilot_server',        # ACTUALIZADO al nuevo nombre del paquete
+            package='r2pilot_server',        
             executable='server_node',
-            # Al no forzar un nombre desde aquí, ROS 2 respetará los nombres originales
-            # (R2Pilot_bridge y R2Pilot_safety_filter) definidos en tus clases de Python.
             output='screen' # Muestra los logs (INFO, WARNING, ERROR) en la terminal
         ),
         
@@ -40,8 +38,8 @@ def generate_launch_description() -> LaunchDescription:
         Node(
             package='web_video_server',
             executable='web_video_server',
-            name='web_video_server',        # Aquí SÍ conservamos el nombre porque es un nodo externo en C++
-            output='log', # Desvía sus logs a un archivo oculto para no "ensuciar" tu consola
+            name='web_video_server',        
+            output='log', 
             parameters=[{'port': 8081}]
         )
     ])

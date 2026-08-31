@@ -1,3 +1,0 @@
-[console_scripts]
-server_node = r2pilot_server.main:entry_point
-

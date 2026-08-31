@@ -52,9 +52,6 @@ class ConnectionManager:
         ## Tarea asíncrona dedicada a la monitorización del bucle Watchdog.
         self.watchdog_task: Optional[asyncio.Task[Any]] = None
 
-        # [TFG] Variable temporal para guardar T1 (Detección de fallo)
-        self.t1_emergencia: int = 0
-
     # =========================================================================
     # GESTIÓN DE ENLACE FÍSICO (WebSockets)
     # =========================================================================

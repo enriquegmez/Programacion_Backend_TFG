@@ -18,8 +18,12 @@ Este repositorio contiene el código del servidor (Backend) correspondiente al *
 ---
 
 ## 📝 Descripción
-Este módulo actúa como pasarela entre el ecosistema **ROS 2 (DDS)** del robot físico y la aplicación móvil Android **R2Pilot**. 
 
+Este es un servidor desarrollado en **Python** utilizando **rclpy** para interactuar con el ecosistema **ROS 2** y gestionar las diferentes funcionalidades del robot. Su propósito es actuar como intermediario entre el robot y la aplicación móvil R2Pilot, procesando y adaptando la información de sensores, actuadores y otros recursos del sistema.
+
+El servidor se comunica con el robot mediante **DDS** y con el cliente Android mediante **WebSockets**, utilizando el protocolo propio **R2Pilot** para intercambiar órdenes e información en tiempo real.
+
+---
 
 ## ⚙️ Requisitos Previos
 - **Sistema Operativo:** Ubuntu 22.04 LTS (o compatible).

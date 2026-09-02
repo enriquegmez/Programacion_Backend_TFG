@@ -1,11 +1,18 @@
-# VS Code
-.vscode/
-*.db
-*.db-journal
+# ROS 2 / Colcon (¡Imprescindible no subir esto!)
+build/
+install/
+log/
 
-# Python (por si usas)
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 
 # Docker
 .docker_data/
+
+# IDEs y OS
+.vscode/
+.idea/
+*.db
+*.db-journal
+.DS_Store

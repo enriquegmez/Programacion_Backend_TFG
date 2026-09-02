@@ -1,0 +1,4 @@
+<map id="r2pilot_server.protocol.models.QueryRespPayload" name="r2pilot_server.protocol.models.QueryRespPayload">
+<area shape="rect" id="node1" title="Respuesta que contiene los datos solicitados por una QUERY_REQ." alt="" coords="5,95,229,136"/>
+<area shape="rect" id="node2" href="$classr2pilot__server_1_1protocol_1_1models_1_1BaseResponsePayload.html" title="Estructura base de la cual heredan todas las respuestas del servidor." alt="" coords="5,5,229,47"/>
+</map>

@@ -1,0 +1,4 @@
+<map id="r2pilot_server.protocol.models.ActionFeedbackPayload" name="r2pilot_server.protocol.models.ActionFeedbackPayload">
+<area shape="rect" id="node1" title="Respuesta de monitorización de progreso de Action Servers de ROS 2." alt="" coords="5,95,229,136"/>
+<area shape="rect" id="node2" href="$classr2pilot__server_1_1protocol_1_1models_1_1BaseResponsePayload.html" title="Estructura base de la cual heredan todas las respuestas del servidor." alt="" coords="5,5,229,47"/>
+</map>

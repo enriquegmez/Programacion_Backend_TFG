@@ -1,0 +1,7 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="node1" href="$classr2pilot__server_1_1protocol_1_1models_1_1BaseResponsePayload.html" title="Estructura base de la cual heredan todas las respuestas del servidor." alt="" coords="5,104,229,145"/>
+<area shape="rect" id="node2" href="$classr2pilot__server_1_1protocol_1_1models_1_1ActionFeedbackPayload.html" title="Respuesta de monitorización de progreso de Action Servers de ROS 2." alt="" coords="277,5,501,47"/>
+<area shape="rect" id="node3" href="$classr2pilot__server_1_1protocol_1_1models_1_1GenericRespPayload.html" title="Respuesta básica de confirmación (ACK) para acciones que no requieren devolver datos." alt="" coords="277,71,501,112"/>
+<area shape="rect" id="node4" href="$classr2pilot__server_1_1protocol_1_1models_1_1QueryRespPayload.html" title="Respuesta que contiene los datos solicitados por una QUERY_REQ." alt="" coords="277,136,501,177"/>
+<area shape="rect" id="node5" href="$classr2pilot__server_1_1protocol_1_1models_1_1StreamRespPayload.html" title="Respuesta para abrir el canal de vídeo o enviar un paquete de sensor." alt="" coords="277,201,501,243"/>
+</map>

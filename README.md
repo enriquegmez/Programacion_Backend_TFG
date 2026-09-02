@@ -12,9 +12,9 @@ Este repositorio contiene el código del servidor (Backend) correspondiente al *
 * **Universidad:** Universidad de Granada (UGR) - ETSIIT / TSTC (2026)
 
 📄 **[Consultar Memoria del TFG (PDF)](docs/Memoria_TFG_R2Pilot_Enrique_Gomez.pdf)**  
-🔗 **[Ver Repositorio del Frontend (App Android)](https://github.com/enriquegmez/Programacion_Frontend_TFG.git)**  
-📚 **[Ver Documentación de Código (Doxygen)](https://enriquegmez.github.io/Programacion_Backend_TFG/doxygen/html/index.html)**
-
+🔗 **[Ver Repositorio del Frontend (App Android)](https://github.com/enriquegmez/TFG_R2Pilot-Frontend.git)**  
+📚 **[Ver Documentación de Código (Doxygen)](https://enriquegmez.github.io/TFG_R2Pilot-Backend/doxygen/html/index.html)**
+https://github.com/enriquegmez/TFG_R2Pilot-Backend.git
 ---
 
 ## 📝 Descripción
@@ -48,7 +48,7 @@ sudo apt install git python3-colcon-common-extensions python3-rosdep
 ```bash
 mkdir -p ~/r2pilot_ws/src
 cd ~/r2pilot_ws/src
-git clone https://github.com/enriquegmez/Programacion_Backend_TFG.git
+git clone https://github.com/enriquegmez/TFG_R2Pilot-Backend.git
 ```
 
 **3. Instalar las dependencias del paquete y compilar:**

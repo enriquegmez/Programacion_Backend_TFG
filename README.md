@@ -14,7 +14,6 @@ Este repositorio contiene el código del servidor (Backend) correspondiente al *
 📄 **[Consultar Memoria del TFG (PDF)](docs/Memoria_TFG_R2Pilot_Enrique_Gomez.pdf)**  
 🔗 **[Ver Repositorio del Frontend (App Android)](https://github.com/enriquegmez/TFG_R2Pilot-Frontend.git)**  
 📚 **[Ver Documentación de Código (Doxygen)](https://enriquegmez.github.io/TFG_R2Pilot-Backend/doxygen/html/index.html)**
-https://github.com/enriquegmez/TFG_R2Pilot-Backend.git
 ---
 
 ## 📝 Descripción

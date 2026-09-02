@@ -5,7 +5,9 @@
 </div>
 
 ## 🎓 Contexto Académico
+
 Este repositorio contiene el código del servidor (Backend) correspondiente al **Trabajo Fin de Grado (TFG)**:
+
 * **Título:** *Desarrollo de una aplicación móvil para el control y monitorización de robots basados en ROS 2*
 * **Autor:** Enrique Gómez Pacheco
 * **Tutor:** Juan José Ramos Muñoz
@@ -14,6 +16,7 @@ Este repositorio contiene el código del servidor (Backend) correspondiente al *
 📄 **[Consultar Memoria del TFG (PDF)](docs/Memoria_TFG_R2Pilot_Enrique_Gomez.pdf)**  
 🔗 **[Ver Repositorio del Frontend (App Android)](https://github.com/enriquegmez/TFG_R2Pilot-Frontend.git)**  
 📚 **[Ver Documentación de Código (Doxygen)](https://enriquegmez.github.io/TFG_R2Pilot-Backend/doxygen/html/index.html)**
+
 ---
 
 ## 📝 Descripción

@@ -4,7 +4,7 @@
   <p><strong>Servidor basado en ROS 2 para el control y monitorización remota de robots desde dispositivos móviles.</strong></p>
 </div>
 
-## 🎓 Contexto Académico
+## 🎓 Contexto
 
 Este repositorio contiene el código del servidor (Backend) correspondiente al **Trabajo Fin de Grado (TFG)**:
 
